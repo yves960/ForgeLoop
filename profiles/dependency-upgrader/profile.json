@@ -13,11 +13,13 @@
     "suppressionFile",
     "failBuildOnCVSS>11"
   ],
+  "requiredPaths": ["pom.xml"],
   "verifier": {
     "type": "maven",
     "arguments": ["-DskipTests", "verify", "-Psca"],
     "passReason": "DEPENDENCY_UPGRADE_PASSED",
-    "failReason": "DEPENDENCY_UPGRADE_FAILED"
+    "failReason": "DEPENDENCY_UPGRADE_FAILED",
+    "requiredOutputPatterns": ["dependency-check-maven"]
   },
   "completion": {
     "requireVerifierPass": true

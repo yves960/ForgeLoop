@@ -118,6 +118,8 @@ def render_status_report(request: StatusReportRequest) -> str:
     module_dir = _module_dir(record)
     runtime_dir = _runtime_dir(request.run_dir, module_dir)
     maven_log = _maven_log(runtime_dir)
+    if maven_log is None:
+        maven_log = _maven_log(request.run_dir / "evidence" / "loop")
     iteration = _iteration(runtime_dir)
     if iteration is None:
         iteration = _iteration(request.run_dir / "evidence" / "loop")

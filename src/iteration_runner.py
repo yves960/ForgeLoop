@@ -9,12 +9,11 @@ from typing import Final, NamedTuple
 from agent_backend import call_agent
 from java_ut_verifier import (
     ProfileVerifierRequest,
-    VerifierFeedback,
-    render_verifier_feedback,
     verify_profile,
 )
 from run_config_store import RunConfig, load_run_config
 from run_store import LoopResult
+from verifier_evidence import VerifierFeedback, render_verifier_feedback
 
 COMPLETION_PROMISE: Final = "COMPLETE"
 ABORT_PROMISE: Final = "LOOP_BLOCKED"
@@ -51,6 +50,8 @@ def verifier_request(config: RunConfig) -> ProfileVerifierRequest:
         arguments=tuple(verifier.get("arguments", ())),
         pass_reason=verifier.get("passReason", "TARGET_UT_PASSED"),
         fail_reason=verifier.get("failReason", "TARGET_UT_FAILED"),
+        required_paths=tuple(config["profile"].get("requiredPaths", ())),
+        required_output_patterns=tuple(verifier.get("requiredOutputPatterns", ())),
     )
 
 
@@ -181,6 +182,18 @@ def run_iteration(config_path: Path) -> int:
 
     print(f"[loop] iteration {iteration}: running deterministic verifier")
     outcome = verify_profile(verifier_request(config), iteration_dir)
+    if outcome.blocked:
+        reason = next(
+            (
+                line.split("=", 1)[1]
+                for line in outcome.feedback.splitlines()
+                if line.startswith("REASON=")
+            ),
+            "VERIFIER_INFRASTRUCTURE_FAILURE",
+        )
+        print(f"[loop] verifier BLOCKED: {reason}")
+        print(f"<promise>{ABORT_PROMISE}</promise>")
+        return 2
     if outcome.passed:
         print("[loop] verifier PASSED")
         print(f"<promise>{COMPLETION_PROMISE}</promise>")

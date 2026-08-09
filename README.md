@@ -116,6 +116,9 @@ status and submit runtime. A profile contributes only its task template,
 allowed paths, bypass patterns, Maven verifier arguments and deterministic
 PASS/FAIL reason codes. Platform teams may adapt the Maven profile/goal names
 (`codecheck`, `sast`, `sca`) to the repository's approved build profiles.
+SCA profiles additionally require `pom.xml` and an approved verifier-output
+marker so deleting or disabling the configured scanner cannot produce a false
+PASS.
 
 `loop run` does **not** create a delivery commit.
 
@@ -402,9 +405,11 @@ loop submit
 
 ## Current scope
 
-v0.1.8 deliberately implements one Engineering Profile (`java-ut-fixer`) while stabilizing the shared runtime, worktree, baseline, verifier, evidence, and delivery contracts.
-
-The next proof of framework generality should be a second profile such as `codecheck-fixer` that reuses the same runtime and delivery layers without changing them.
+v0.1.8 provides five Engineering Profiles: `java-ut-fixer`,
+`codecheck-fixer`, `sast-fixer`, `sca-upgrader`, and
+`dependency-upgrader`. They share the same runtime, worktree, baseline,
+evidence, status, submit, and delivery layers; their differences remain in
+profile-owned task, verifier, and policy configuration.
 
 
 ## Startup diagnostics

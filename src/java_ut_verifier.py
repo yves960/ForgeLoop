@@ -1,15 +1,27 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Literal, NamedTuple, TypedDict
+from typing import Literal, NamedTuple
 
 from java_ut_policy import (
     ProfilePolicyRequest,
     find_policy_violations,
     find_test_bypass_additions,
 )
-from process_runner import run_process
+from maven_verifier import MavenVerificationRequest, execute_maven_verifier
+from runtime_safety import UnsafeRuntimePathError, prepare_verifier_directory
+from verifier_evidence import (
+    CommandResult,
+    EvidenceRequest,
+    PolicyViolationResult,
+    TestBypassResult,
+    VerificationEvidence,
+    VerificationOutcome,
+    VerifierError,
+    VerifierFeedback,
+    persist_verification,
+    render_verifier_feedback,
+)
 from worktree_manager import build_worktree_tree
 
 
@@ -27,86 +39,8 @@ class ProfileVerifierRequest(NamedTuple):
     arguments: tuple[str, ...]
     pass_reason: str
     fail_reason: str
-
-
-class VerifierFeedback(NamedTuple):
-    status: Literal["VERIFIER_PASS", "VERIFIER_FAIL"]
-    reason: str
-    test: str
-    detail: str = ""
-
-
-class VerificationOutcome(NamedTuple):
-    passed: bool
-    feedback: str
-
-
-class PolicyViolationResult(TypedDict):
-    status: Literal["FAIL"]
-    reason: Literal["POLICY_VIOLATION"]
-    test: str
-    violations: list[str]
-
-
-class TestBypassResult(TypedDict):
-    status: Literal["FAIL"]
-    reason: Literal["TEST_BYPASS_PATTERN"]
-    test: str
-    findings: list[str]
-
-
-class MavenResult(TypedDict):
-    status: Literal["PASS", "FAIL"]
-    reason: str
-    test: str
-    exitCode: int
-
-
-class VerificationEvidence(NamedTuple):
-    outcome: VerificationOutcome
-    result: PolicyViolationResult | TestBypassResult | MavenResult
-    maven_output: str | None = None
-
-
-class VerifierError(RuntimeError):
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-
-
-def render_verifier_feedback(feedback: VerifierFeedback) -> str:
-    lines = [
-        feedback.status,
-        "",
-        f"REASON={feedback.reason}",
-        f"TEST={feedback.test}",
-    ]
-    if feedback.detail:
-        lines.extend(("", feedback.detail.rstrip()))
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def _write_text(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="\n") as stream:
-        _ = stream.write(content)
-
-
-def _persist_verification(
-    request: ProfileVerifierRequest,
-    iteration_dir: Path,
-    evidence: VerificationEvidence,
-) -> VerificationOutcome:
-    runtime_dir = request.module_dir / ".loop"
-    _write_text(runtime_dir / "verifier-result.md", evidence.outcome.feedback)
-    _write_text(iteration_dir / "verifier-output.txt", evidence.outcome.feedback)
-    _write_text(
-        runtime_dir / "result.json",
-        json.dumps(evidence.result, ensure_ascii=False, indent=2),
-    )
-    if evidence.maven_output is not None:
-        _write_text(runtime_dir / "maven-output.txt", evidence.maven_output)
-        _write_text(iteration_dir / "maven-output.txt", evidence.maven_output)
-    return evidence.outcome
+    required_paths: tuple[str, ...]
+    required_output_patterns: tuple[str, ...]
 
 
 def verify_profile(
@@ -116,7 +50,71 @@ def verify_profile(
 ) -> VerificationOutcome:
     if not request.base_tree:
         raise VerifierError("Verifier config is missing baseTree/baseCommit")
-    iteration_dir.mkdir(parents=True, exist_ok=True)
+    evidence_request = EvidenceRequest(request.module_dir, request.run_dir)
+    try:
+        iteration_dir = prepare_verifier_directory(request.module_dir, iteration_dir)
+    except UnsafeRuntimePathError as error:
+        feedback = render_verifier_feedback(
+            VerifierFeedback(
+                "VERIFIER_FAIL",
+                "UNSAFE_RUNTIME_PATH",
+                request.test,
+                str(error),
+            )
+        )
+        blocked_result: CommandResult = {
+            "status": "BLOCKED",
+            "reason": "UNSAFE_RUNTIME_PATH",
+            "test": request.test,
+            "exitCode": 2,
+        }
+        return persist_verification(
+            evidence_request,
+            iteration_dir,
+            VerificationEvidence(
+                VerificationOutcome(False, feedback, True), blocked_result
+            ),
+            runtime_safe=False,
+        )
+
+    missing_paths = [
+        path
+        for path in request.required_paths
+        if not (request.module_dir / path).is_file()
+        or (request.module_dir / path).is_symlink()
+    ]
+    if missing_paths:
+        reason = "VERIFIER_REQUIRED_PATH_MISSING" if baseline else "POLICY_VIOLATION"
+        feedback = render_verifier_feedback(
+            VerifierFeedback(
+                "VERIFIER_FAIL",
+                reason,
+                request.test,
+                "Required verifier paths missing:\n"
+                + "\n".join(f"- {path}" for path in missing_paths),
+            )
+        )
+        if baseline:
+            required_result = CommandResult(
+                status="BLOCKED",
+                reason=reason,
+                test=request.test,
+                exitCode=2,
+            )
+            evidence = VerificationEvidence(
+                VerificationOutcome(False, feedback, True), required_result
+            )
+        else:
+            policy_result = PolicyViolationResult(
+                status="FAIL",
+                reason="POLICY_VIOLATION",
+                test=request.test,
+                violations=missing_paths,
+            )
+            evidence = VerificationEvidence(
+                VerificationOutcome(False, feedback), policy_result
+            )
+        return persist_verification(evidence_request, iteration_dir, evidence)
 
     if not baseline:
         current_tree = build_worktree_tree(
@@ -148,8 +146,8 @@ def verify_profile(
                 "test": request.test,
                 "violations": violations,
             }
-            return _persist_verification(
-                request,
+            return persist_verification(
+                evidence_request,
                 iteration_dir,
                 VerificationEvidence(VerificationOutcome(False, feedback), result),
             )
@@ -171,8 +169,8 @@ def verify_profile(
                 "test": request.test,
                 "findings": findings,
             }
-            return _persist_verification(
-                request,
+            return persist_verification(
+                evidence_request,
                 iteration_dir,
                 VerificationEvidence(
                     VerificationOutcome(False, feedback),
@@ -188,40 +186,20 @@ def verify_profile(
             for argument in request.arguments
         )
     )
-    completed = run_process(
-        [request.maven, *arguments],
-        cwd=request.module_dir,
-        check=False,
-    )
-    maven_output = completed.stdout or ""
-    passed = completed.returncode == 0
-    reason = request.pass_reason if passed else request.fail_reason
-    status: Literal["VERIFIER_PASS", "VERIFIER_FAIL"] = (
-        "VERIFIER_PASS" if passed else "VERIFIER_FAIL"
-    )
-    detail = (
-        ""
-        if passed
-        else (
-            f"Maven exit code: {completed.returncode}\n"
-            + "Read .loop/maven-output.txt before the next change."
+    evidence = execute_maven_verifier(
+        MavenVerificationRequest(
+            request.maven,
+            arguments,
+            request.module_dir,
+            request.test,
+            request.pass_reason,
+            request.fail_reason,
+            request.required_output_patterns,
+            baseline,
         )
     )
-    feedback = render_verifier_feedback(
-        VerifierFeedback(status, reason, request.test, detail)
-    )
-    maven_result: MavenResult = {
-        "status": "PASS" if passed else "FAIL",
-        "reason": reason,
-        "test": request.test,
-        "exitCode": completed.returncode,
-    }
-    return _persist_verification(
-        request,
+    return persist_verification(
+        evidence_request,
         iteration_dir,
-        VerificationEvidence(
-            VerificationOutcome(passed, feedback),
-            maven_result,
-            maven_output,
-        ),
+        evidence,
     )

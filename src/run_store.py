@@ -190,8 +190,13 @@ def _run_record(nodes: Mapping[str, ast.expr], path: Path) -> RunRecord:
     return record
 
 
-def read_loop_result(module_dir: Path) -> LoopResult:
-    path = module_dir / ".loop" / "result.json"
+def read_loop_result(module_dir: Path, run_dir: Path | None = None) -> LoopResult:
+    external = run_dir / "latest-result.json" if run_dir is not None else None
+    path = (
+        external
+        if external is not None and external.exists()
+        else module_dir / ".loop" / "result.json"
+    )
     if not path.exists():
         return LoopResult(status="UNKNOWN", reason="RESULT_NOT_FOUND")
     try:

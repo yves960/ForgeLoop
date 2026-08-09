@@ -7,6 +7,8 @@ import shutil
 from collections.abc import Mapping
 from pathlib import Path
 
+from runtime_safety import UnsafeRuntimePathError, validate_runtime_directory
+
 APP_NAME = "loop-engineering"
 _RUNTIME_DIRECTORY_NAMES = (".loop", ".ralph")
 
@@ -101,8 +103,12 @@ def archive_runtime(
         source = module_dir / name
         if not source.exists():
             continue
+        try:
+            source = validate_runtime_directory(module_dir, name)
+        except UnsafeRuntimePathError:
+            continue
         destination = evidence_dir / name.lstrip(".")
         if destination.exists():
             shutil.rmtree(destination)
-        _ = shutil.copytree(source, destination)
+        _ = shutil.copytree(source, destination, symlinks=True)
         shutil.rmtree(source)

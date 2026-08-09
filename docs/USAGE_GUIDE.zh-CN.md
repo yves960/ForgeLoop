@@ -169,7 +169,9 @@ Run 不会执行正式 commit 或 review。
   `NOSONAR`、全局 Suppression 或关闭扫描绕过。
 - `sca-upgrader` 与 `dependency-upgrader` 默认执行
   `mvn -DskipTests verify -Psca`，允许修改 `pom.xml` 及必要兼容代码，禁止
-  关闭扫描或加入宽泛 Suppression。
+  关闭扫描或加入宽泛 Suppression。默认还要求 Maven 输出包含
+  `dependency-check-maven`，确保 SCA 插件确实执行；平台更换插件时必须同步
+  调整 `requiredOutputPatterns`。
 
 这些 Maven Profile 名称是平台适配点。企业仓库若使用不同的 CodeCheck、
 SAST 或 SCA 插件，由平台团队修改对应 `profiles/<name>/profile.json` 的
@@ -254,6 +256,13 @@ Final Verifier、commit hook 或 review 任一步失败时，Worktree 与 Baseli
 常见处理：
 
 - `AGENT_INTERACTIVE_CONFIRMATION_REQUIRED`：对可信仓库配置 backend 的非交互参数。
+- `MAVEN_PROFILE_NOT_CONFIGURED`、`MAVEN_NETWORK_FAILURE`、
+  `MAVEN_DEPENDENCY_RESOLUTION_FAILED`：Verifier 基础设施未就绪，Ralph 立即
+  abort，不消耗后续修复 iteration。
+- `VERIFIER_EVIDENCE_MISSING`：命令虽然结束，但缺少 Profile 要求的扫描器
+  执行标记；不得判定 PASS。
+- `UNSAFE_RUNTIME_PATH`：`.loop`/`.ralph` 包含符号链接，框架拒绝写入或归档，
+  避免 Evidence 越出 Worktree。
 - `TARGET_UT_FAILED`：直接查看 `loop status` 的摘要和完整 Maven 日志。
 - `POLICY_VIOLATION`：Agent 必须撤销当前 Profile 允许范围之外的修改。
 - `COMMIT_FAILED`：修复 commit message/hook 问题后，在保留的 Worktree 中重试。

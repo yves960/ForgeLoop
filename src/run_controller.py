@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 from iteration_runner import (
@@ -15,6 +14,7 @@ from java_ut_verifier import verify_profile
 from process_runner import run_process
 from run_config_store import RunConfig, write_run_config
 from run_environment import render_task
+from run_failure import persist_run_error, persist_unsafe_runtime
 from run_preparation import (
     PreparedRun,
     RunOptions,
@@ -25,6 +25,7 @@ from run_preparation import (
     run_timestamp,
 )
 from run_store import LoopResult, RunRecord, read_loop_result, write_run_record
+from runtime_safety import UnsafeRuntimePathError, prepare_runtime_directory
 from runtime_store import archive_runtime
 from worktree_lifecycle import (
     CleanupRequest,
@@ -126,8 +127,7 @@ def _execute_active_run(
     prepared: PreparedRun,
     worktree: WorktreeResult,
 ) -> int:
-    runtime_dir = worktree.module_dir / ".loop"
-    runtime_dir.mkdir(parents=True, exist_ok=True)
+    runtime_dir = prepare_runtime_directory(worktree.module_dir, ".loop")
     _write_text(
         runtime_dir / "task.md",
         render_task(
@@ -159,6 +159,16 @@ def _execute_active_run(
         runtime_dir / "iterations" / "000-baseline",
         baseline=True,
     )
+    if baseline.blocked:
+        result = read_loop_result(worktree.module_dir, prepared.run_dir)
+        record["status"] = "BLOCKED"
+        record["reason"] = result.get("reason", "VERIFIER_INFRASTRUCTURE_FAILURE")
+        record["endedAt"] = run_timestamp()
+        write_run_record(prepared.run_dir, record)
+        archive_runtime(worktree.module_dir, prepared.run_dir)
+        print(f"[loop] baseline BLOCKED: {record['reason']}")
+        print(f"[loop] worktree preserved: {worktree.root}")
+        return 2
     if baseline.passed:
         print("[loop] baseline already PASSED; no repair loop is needed.")
         return _baseline_noop(prepared, worktree, record)
@@ -185,7 +195,7 @@ def _execute_active_run(
         check=False,
     )
 
-    result = read_loop_result(worktree.module_dir)
+    result = read_loop_result(worktree.module_dir, prepared.run_dir)
     record["status"] = result.get("status", "UNKNOWN")
     record["reason"] = result.get("reason")
     record["ralphExitCode"] = completed.returncode
@@ -208,40 +218,13 @@ def _execute_active_run(
     return 0 if result.get("status") == "PASS" else 1
 
 
-def _persist_run_error(
-    prepared: PreparedRun,
-    worktree: WorktreeResult,
-) -> None:
-    record = RunRecord(
-        runId=prepared.run_id,
-        profileName=prepared.options.profile,
-        test=prepared.test,
-        repoRoot=str(prepared.repository.root),
-        worktreeRoot=str(worktree.root),
-        moduleRel=prepared.repository.module_rel,
-        branch=worktree.branch,
-        sourceHead=worktree.source_head,
-        baseTree=worktree.baseline_tree,
-        baselineRef=worktree.baseline_ref,
-        runDir=str(prepared.run_dir),
-        status="ERROR",
-        endedAt=run_timestamp(),
-    )
-    try:
-        write_run_record(prepared.run_dir, record)
-    except (OSError, UnicodeError) as error:
-        print(
-            f"[loop] warning: failed to persist error metadata: {error}",
-            file=sys.stderr,
-            flush=True,
-        )
-
-
 def execute_run(options: RunOptions) -> int:
     prepared = prepare_run(options)
     worktree = create_isolated_worktree(prepared)
     try:
         return _execute_active_run(prepared, worktree)
+    except UnsafeRuntimePathError:
+        return persist_unsafe_runtime(prepared, worktree)
     except (OSError, UnicodeError, RuntimeError, ValueError):
-        _persist_run_error(prepared, worktree)
+        persist_run_error(prepared, worktree)
         raise

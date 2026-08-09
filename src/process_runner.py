@@ -38,13 +38,13 @@ def run_process(
         and args
         and args[0].lower().endswith((".cmd", ".bat"))
     ):
-        command_line = subprocess.list2cmdline(args)
+        command_line = " ".join('"' + value.replace('"', '""') + '"' for value in args)
         args = [
             os.environ.get("COMSPEC", "cmd.exe"),
             "/d",
             "/s",
             "/c",
-            command_line,
+            f'"{command_line}"',
         ]
 
     completed = subprocess.run(

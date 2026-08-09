@@ -2,16 +2,22 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import re
 import shutil
 import subprocess
 import uuid
 from pathlib import Path
-from typing import NamedTuple
+from typing import Final, NamedTuple
 
 from agent_backend import AgentBackend, AgentOverrides, resolve_agent_backend
 from config_store import load_global_config
 from process_runner import run_process
 from worktree_manager import normalize_git_path
+
+_UNSAFE_COMMAND_TARGET: Final = re.compile(r'[\x00-\x1f&|<>^%!()"]')
+_JAVA_TEST_SELECTOR: Final = re.compile(
+    r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*" + r"(?:#[A-Za-z_$][\w$]*)?"
+)
 
 
 class RepositoryContext(NamedTuple):
@@ -150,9 +156,7 @@ def find_ralph_ts() -> Path:
 
 
 def normalize_test_selector(value: str) -> str:
-    raw = value.strip().strip('"')
-    if not raw:
-        raise RunEnvironmentError("--test cannot be empty")
+    raw = normalize_profile_target(value)
 
     if "#" in raw:
         class_part, method_part = raw.split("#", 1)
@@ -172,13 +176,18 @@ def normalize_test_selector(value: str) -> str:
         class_part = class_part.replace("/", ".")
     if not class_part:
         raise RunEnvironmentError(f"Invalid --test value: {value}")
-    return class_part + suffix
+    selector = class_part + suffix
+    if _JAVA_TEST_SELECTOR.fullmatch(selector) is None:
+        raise RunEnvironmentError(f"Invalid --test value: {value}")
+    return selector
 
 
 def normalize_profile_target(value: str) -> str:
     target = value.strip().strip('"')
     if not target:
         raise RunEnvironmentError("--target cannot be empty")
+    if _UNSAFE_COMMAND_TARGET.search(target) is not None:
+        raise RunEnvironmentError("Target contains unsafe command characters")
     return target
 
 

@@ -24,6 +24,7 @@ class VerifierProfile(TypedDict, total=False):
     arguments: list[str]
     passReason: str
     failReason: str
+    requiredOutputPatterns: list[str]
 
 
 class EngineeringProfile(TypedDict, total=False):
@@ -32,6 +33,7 @@ class EngineeringProfile(TypedDict, total=False):
     defaultMaxIterations: int
     allowedPathSuffixes: list[str]
     forbiddenAddedPatterns: list[str]
+    requiredPaths: list[str]
     verifier: VerifierProfile
     completion: CompletionPolicy
 
@@ -72,7 +74,7 @@ def parse_engineering_profile(
     if maximum is not None:
         profile["defaultMaxIterations"] = maximum
 
-    for key in ("allowedPathSuffixes", "forbiddenAddedPatterns"):
+    for key in ("allowedPathSuffixes", "forbiddenAddedPatterns", "requiredPaths"):
         if key in values:
             profile[key] = json_node_string_list(values.get(key))
 
@@ -88,6 +90,10 @@ def parse_engineering_profile(
         if "arguments" in verifier_values:
             verifier["arguments"] = json_node_string_list(
                 verifier_values.get("arguments")
+            )
+        if "requiredOutputPatterns" in verifier_values:
+            verifier["requiredOutputPatterns"] = json_node_string_list(
+                verifier_values.get("requiredOutputPatterns")
             )
         for key in ("passReason", "failReason"):
             value = json_node_string(verifier_values.get(key))

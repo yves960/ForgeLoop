@@ -138,7 +138,11 @@ def _parse_run_config(
         base_tree = _required_string(values, "baseCommit", path)
     baseline_node = values.get("baselineRef")
     baseline_ref = json_node_string(baseline_node)
-    if baseline_ref is None and not json_node_is_null(baseline_node):
+    if (
+        baseline_node is not None
+        and baseline_ref is None
+        and not json_node_is_null(baseline_node)
+    ):
         raise RunConfigReadError(path, "missing string/null field: baselineRef")
 
     return RunConfig(
