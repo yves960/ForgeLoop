@@ -17,7 +17,7 @@ Profile 声明任务模板、修改范围、绕过模式、Verifier 参数和原
 通用依赖：
 
 - Git
-- Python 3.9+
+- Python 3.10+
 - Bun 与 npm
 - 全局安装的 Open Ralph Wiggum
 - Java、Maven，或仓库内的 `mvnw` / `mvnw.cmd`

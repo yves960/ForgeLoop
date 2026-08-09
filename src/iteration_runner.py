@@ -105,6 +105,7 @@ def _persist_agent_failure(
     exit_code: int,
 ) -> None:
     runtime_dir = Path(config["moduleDir"]) / RUNTIME_DIR_NAME
+    run_dir = Path(config["runDir"])
     reason = _failure_reason(agent_output)
     feedback = render_verifier_feedback(
         VerifierFeedback(
@@ -116,14 +117,14 @@ def _persist_agent_failure(
         )
     )
     _write_text(runtime_dir / "verifier-result.md", feedback)
-    _write_text(
-        runtime_dir / "result.json",
-        json.dumps(
-            _blocked_result(config, exit_code, reason),
-            ensure_ascii=False,
-            indent=2,
-        ),
+    result_json = json.dumps(
+        _blocked_result(config, exit_code, reason),
+        ensure_ascii=False,
+        indent=2,
     )
+    _write_text(runtime_dir / "result.json", result_json)
+    _write_text(run_dir / "latest-verifier-result.md", feedback)
+    _write_text(run_dir / "latest-result.json", result_json)
 
 
 def _print_agent_failure(

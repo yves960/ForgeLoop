@@ -17,10 +17,10 @@ fi
 
 for LOOP_PYTHON_CANDIDATE in $PYTHON_CANDIDATES; do
   if command -v "$LOOP_PYTHON_CANDIDATE" >/dev/null 2>&1 &&
-     "$LOOP_PYTHON_CANDIDATE" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
+     "$LOOP_PYTHON_CANDIDATE" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
     exec "$LOOP_PYTHON_CANDIDATE" -u "$LOOP_CLI" "$@"
   fi
 done
 
-echo "[loop] ERROR: Python 3.9+ not found. Install it with: brew install python" >&2
+echo "[loop] ERROR: Python 3.10+ not found. Install it with: brew install python" >&2
 exit 2

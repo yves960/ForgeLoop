@@ -3,6 +3,7 @@
 Cross-platform engineering control loop for Windows and macOS around Open Ralph Wiggum, configurable Claude Code/OpenCode agent backends, deterministic verification, Git worktree isolation, and an explicit Git delivery stage.
 
 中文安装、OpenCode 配置、运行、状态、提交与故障处理见 [使用与运维指南](docs/USAGE_GUIDE.zh-CN.md)。
+五类 Profile 的发布前验证场景见 [验证矩阵](docs/VALIDATION.md)。
 
 ## v0.1.8 runtime-location and worktree UX
 

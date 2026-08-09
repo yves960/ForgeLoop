@@ -80,9 +80,10 @@ def execute_maven_verifier(request: MavenVerificationRequest) -> VerificationEvi
         ),
         None,
     )
+    if infrastructure_reason is not None:
+        passed = False
     blocked = bool(
-        not passed
-        and infrastructure_reason is not None
+        infrastructure_reason is not None
         and (
             request.baseline or infrastructure_reason != "MAVEN_PROFILE_NOT_CONFIGURED"
         )
@@ -91,10 +92,10 @@ def execute_maven_verifier(request: MavenVerificationRequest) -> VerificationEvi
         passed = False
         blocked = request.baseline
 
-    if missing_evidence is not None:
-        reason = "VERIFIER_EVIDENCE_MISSING"
-    elif blocked:
+    if blocked or infrastructure_reason == "MAVEN_PROFILE_NOT_CONFIGURED":
         reason = infrastructure_reason or "VERIFIER_INFRASTRUCTURE_FAILURE"
+    elif missing_evidence is not None:
+        reason = "VERIFIER_EVIDENCE_MISSING"
     else:
         reason = request.pass_reason if passed else request.fail_reason
     status: Literal["VERIFIER_PASS", "VERIFIER_FAIL"] = (
