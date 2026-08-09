@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+LOOP_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+LOOP_CLI="$LOOP_HOME/src/loop_cli.py"
+
+if [ ! -f "$LOOP_CLI" ]; then
+  echo "[loop] ERROR: installation is incomplete. Missing: $LOOP_CLI" >&2
+  exit 2
+fi
+
+if [ -n "${LOOP_PYTHON:-}" ]; then
+  PYTHON_CANDIDATES=$LOOP_PYTHON
+else
+  PYTHON_CANDIDATES="/opt/homebrew/bin/python3 /usr/local/bin/python3 python3"
+fi
+
+for LOOP_PYTHON_CANDIDATE in $PYTHON_CANDIDATES; do
+  if command -v "$LOOP_PYTHON_CANDIDATE" >/dev/null 2>&1 &&
+     "$LOOP_PYTHON_CANDIDATE" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
+    exec "$LOOP_PYTHON_CANDIDATE" -u "$LOOP_CLI" "$@"
+  fi
+done
+
+echo "[loop] ERROR: Python 3.9+ not found. Install it with: brew install python" >&2
+exit 2

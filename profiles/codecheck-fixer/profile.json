@@ -1,0 +1,24 @@
+{
+  "name": "codecheck-fixer",
+  "description": "Repair deterministic Maven code-quality gate failures.",
+  "defaultMaxIterations": 5,
+  "allowedPathSuffixes": [
+    "src/main/",
+    "src/test/"
+  ],
+  "forbiddenAddedPatterns": [
+    "CHECKSTYLE.OFF",
+    "NOPMD",
+    "NOSONAR",
+    "@SuppressWarnings(\"all\")"
+  ],
+  "verifier": {
+    "type": "maven",
+    "arguments": ["-DskipTests", "verify", "-Pcodecheck"],
+    "passReason": "CODECHECK_PASSED",
+    "failReason": "CODECHECK_FAILED"
+  },
+  "completion": {
+    "requireVerifierPass": true
+  }
+}

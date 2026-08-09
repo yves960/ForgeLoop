@@ -1,0 +1,25 @@
+{
+  "name": "sca-upgrader",
+  "description": "Upgrade vulnerable Maven dependencies under a deterministic SCA gate.",
+  "defaultMaxIterations": 7,
+  "allowedPathSuffixes": [
+    "pom.xml",
+    "src/main/",
+    "src/test/"
+  ],
+  "forbiddenAddedPatterns": [
+    "dependency-check.skip",
+    "ossindex.skip",
+    "suppressionFile",
+    "failBuildOnCVSS>11"
+  ],
+  "verifier": {
+    "type": "maven",
+    "arguments": ["-DskipTests", "verify", "-Psca"],
+    "passReason": "SCA_PASSED",
+    "failReason": "SCA_FAILED"
+  },
+  "completion": {
+    "requireVerifierPass": true
+  }
+}

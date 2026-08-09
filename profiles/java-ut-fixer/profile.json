@@ -1,0 +1,23 @@
+{
+  "name": "java-ut-fixer",
+  "description": "Repair one failing Java unit test under deterministic Maven verification.",
+  "defaultMaxIterations": 5,
+  "allowedPathSuffixes": [
+    "src/test/"
+  ],
+  "forbiddenAddedPatterns": [
+    "@Disabled",
+    "@Ignore",
+    "assumeTrue(false",
+    "assumeFalse(true"
+  ],
+  "verifier": {
+    "type": "java-ut",
+    "arguments": [],
+    "passReason": "TARGET_UT_PASSED",
+    "failReason": "TARGET_UT_FAILED"
+  },
+  "completion": {
+    "requireVerifierPass": true
+  }
+}

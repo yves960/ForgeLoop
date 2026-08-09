@@ -1,0 +1,25 @@
+{
+  "name": "dependency-upgrader",
+  "description": "Upgrade a requested Maven dependency and verify it with the SCA gate.",
+  "defaultMaxIterations": 7,
+  "allowedPathSuffixes": [
+    "pom.xml",
+    "src/main/",
+    "src/test/"
+  ],
+  "forbiddenAddedPatterns": [
+    "dependency-check.skip",
+    "ossindex.skip",
+    "suppressionFile",
+    "failBuildOnCVSS>11"
+  ],
+  "verifier": {
+    "type": "maven",
+    "arguments": ["-DskipTests", "verify", "-Psca"],
+    "passReason": "DEPENDENCY_UPGRADE_PASSED",
+    "failReason": "DEPENDENCY_UPGRADE_FAILED"
+  },
+  "completion": {
+    "requireVerifierPass": true
+  }
+}
