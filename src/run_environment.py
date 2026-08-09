@@ -14,7 +14,7 @@ from config_store import load_global_config
 from process_runner import run_process
 from worktree_manager import normalize_git_path
 
-_UNSAFE_COMMAND_TARGET: Final = re.compile(r'[\x00-\x1f&|<>^%!()"]')
+_UNSAFE_COMMAND_TARGET: Final = re.compile(r'[\x00-\x1f;&|<>^%!()"]')
 _JAVA_TEST_SELECTOR: Final = re.compile(
     r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*" + r"(?:#[A-Za-z_$][\w$]*)?"
 )
