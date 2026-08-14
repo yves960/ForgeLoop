@@ -39,6 +39,49 @@ class StatusReportRequest(NamedTuple):
     windows: bool
 
 
+def build_status_document(request: StatusReportRequest) -> dict[str, object]:
+    """Machine-readable status document for the AICP bridge and hooks."""
+    record = request.record
+    module_dir = _module_dir(record)
+    runtime_dir = _runtime_dir(request.run_dir, module_dir)
+    maven_log = _maven_log(runtime_dir)
+    if maven_log is None:
+        maven_log = _maven_log(request.run_dir / "evidence" / "loop")
+    iteration = _iteration(runtime_dir)
+    if iteration is None:
+        iteration = _iteration(request.run_dir / "evidence" / "loop")
+    summary = (
+        extract_maven_failure_summary(
+            maven_log.read_text(encoding="utf-8", errors="replace")
+        )
+        if maven_log is not None
+        else MavenFailureSummary(test_totals=None, failure_details=())
+    )
+    evidence_dir = request.run_dir / "evidence"
+    return {
+        "runId": record.get("runId", request.run_id),
+        "profileName": record.get("profileName"),
+        "status": record.get("status", "UNKNOWN"),
+        "reason": record.get("reason"),
+        "target": record.get("test"),
+        "iteration": iteration,
+        "maxIterations": record.get("maxIterations"),
+        "changedFiles": list(record.get("changedFiles", ())),
+        "branch": record.get("branch"),
+        "worktreeRoot": record.get("worktreeRoot"),
+        "runDir": str(request.run_dir),
+        "evidenceUri": str(evidence_dir),
+        "verifier": {
+            "testTotals": summary.test_totals,
+            "failureDetails": list(summary.failure_details),
+            "logPath": str(maven_log) if maven_log is not None else None,
+        },
+        "submission": dict(record.get("submission", {})),
+        "startedAt": record.get("startedAt"),
+        "endedAt": record.get("endedAt"),
+    }
+
+
 def _clean_maven_line(line: str) -> str:
     without_ansi = _ANSI_ESCAPE.sub("", line).strip()
     return _MAVEN_PREFIX.sub("", without_ansi).strip()

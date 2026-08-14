@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import sys
 from pathlib import Path
@@ -22,7 +23,11 @@ from iteration_runner import run_iteration_cli
 from run_controller import execute_run
 from run_preparation import RunOptions
 from run_store import load_run_record, write_run_record
-from status_report import StatusReportRequest, render_status_report
+from status_report import (
+    StatusReportRequest,
+    build_status_document,
+    render_status_report,
+)
 from submission_preflight import SubmitOptions
 from submission_runner import submit_run
 from worktree_lifecycle import (
@@ -65,11 +70,11 @@ def cmd_run(args: CliArguments) -> int:
 
 def cmd_status(args: CliArguments) -> int:
     run_dir, meta = load_run_record(args.run_id)
-    print(
-        render_status_report(
-            StatusReportRequest(args.run_id, run_dir, meta, os.name == "nt")
-        )
-    )
+    request = StatusReportRequest(args.run_id, run_dir, meta, os.name == "nt")
+    if args.json:
+        print(json.dumps(build_status_document(request), ensure_ascii=False, indent=2))
+        return 0
+    print(render_status_report(request))
     return 0
 
 

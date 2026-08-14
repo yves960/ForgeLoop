@@ -24,6 +24,7 @@ class CliArguments(argparse.Namespace):
     maven: str | None = None
     require_clean: bool = False
     run_id: str = ""
+    json: bool = False
     yes: bool = False
     message: str | None = None
     message_file: str | None = None
@@ -221,6 +222,11 @@ def build_parser(handlers: CliHandlers) -> argparse.ArgumentParser:
 
     status = sub.add_parser("status", help="Show metadata for a run")
     _ = status.add_argument("run_id")
+    _ = status.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a machine-readable status document (for the AICP bridge)",
+    )
     status.set_defaults(func=handlers.status)
     cleanup = sub.add_parser(
         "cleanup",
