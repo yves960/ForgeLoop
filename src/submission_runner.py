@@ -10,6 +10,7 @@ from delivery_adapter import (
     run_review,
     stage_all,
 )
+from hook_notify import notify_run_complete
 from run_store import SubmissionRecord, write_run_record
 from submission_preflight import (
     SubmissionChanges,
@@ -169,6 +170,14 @@ def _cleanup_after_review(
 
 def submit_run(options: SubmitOptions) -> int:
     context = load_submission_context(options)
+    try:
+        return _submit_run_locked(options, context)
+    finally:
+        # Best-effort terminal webhook; never blocks or fails the submit.
+        _ = notify_run_complete(context.run_dir)
+
+
+def _submit_run_locked(options: SubmitOptions, context: SubmissionContext) -> int:
     if not run_final_verifier(context):
         return 1
     changes = collect_submission_changes(context)

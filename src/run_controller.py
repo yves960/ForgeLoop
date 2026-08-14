@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from hook_notify import notify_run_complete
 from iteration_runner import (
     ABORT_PROMISE,
     COMPLETION_PROMISE,
@@ -214,6 +215,7 @@ def _execute_active_run(
     record["changedFiles"] = changes
     write_run_record(prepared.run_dir, record)
     archive_runtime(worktree.module_dir, prepared.run_dir)
+    _ = notify_run_complete(prepared.run_dir)
     _print_final(record, result, changes)
     return 0 if result.get("status") == "PASS" else 1
 
