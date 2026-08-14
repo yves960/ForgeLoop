@@ -103,6 +103,15 @@ loop.cmd config agent-arg --value=--skip-safe-check
 ./loop config clear-agent
 ```
 
+Run 结束钩子（`loop submit` 完成后可配 webhook 调 sync-evidence.sh）：
+
+```bash
+./loop config hook-on-complete "https://your-webhook.example/loop-complete"
+./loop config clear-hook-on-complete
+```
+
+详见 `docs/OIKB_INTEGRATION.md`。
+
 每次 Run 也可用 `--agent-command`、`--agent-protocol`、`--agent-arg` 临时覆盖；环境变量为 `LOOP_AGENT_COMMAND`、`LOOP_AGENT_PROTOCOL`、`LOOP_AGENT_ARGS`。
 
 ## 4. Runtime Root
