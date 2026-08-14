@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 from agent_backend import resolve_executable
 from config_store import (
     AgentConfig,
     DeliveryConfig,
+    HooksConfig,
     global_config_path,
     load_global_config,
     save_global_config,
@@ -122,6 +124,34 @@ def clear_runtime_root() -> int:
         "[loop] runtime-root override cleared; future runs will follow the "
         + "repository drive"
     )
+    return 0
+
+
+def configure_hook_on_complete(url: str) -> int:
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ConfigCommandError(f"Invalid webhook URL: {url}")
+    config = load_global_config()
+    hooks = HooksConfig(config.get("hooks", {}))
+    hooks["onComplete"] = url
+    config["hooks"] = hooks
+    save_global_config(config)
+    print(f"[loop] on-complete webhook configured: {url}")
+    print(
+        "[loop] fired once per run at terminal pass/fail status "
+        + "(best-effort, 5s timeout, never blocks the run or submit)"
+    )
+    return 0
+
+
+def clear_hook_on_complete() -> int:
+    config = load_global_config()
+    hooks = config.get("hooks")
+    if hooks is not None:
+        _ = hooks.pop("onComplete", None)
+        config["hooks"] = hooks
+        save_global_config(config)
+    print(f"[loop] on-complete webhook cleared: {global_config_path()}")
     return 0
 
 

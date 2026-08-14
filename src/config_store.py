@@ -28,9 +28,14 @@ class DeliveryConfig(TypedDict, total=False):
     reviewCommand: str
 
 
+class HooksConfig(TypedDict, total=False):
+    onComplete: str
+
+
 class LoopConfig(TypedDict, total=False):
     agent: AgentConfig
     delivery: DeliveryConfig
+    hooks: HooksConfig
     runtimeRoot: str
 
 
@@ -78,6 +83,16 @@ def _delivery_config(node: ast.expr | None) -> DeliveryConfig | None:
     return config if config else None
 
 
+def _hooks_config(node: ast.expr | None) -> HooksConfig | None:
+    if node is None:
+        return None
+    values = json_node_object(node)
+    on_complete = json_node_string(values.get("onComplete"))
+    if on_complete is None:
+        return None
+    return HooksConfig(onComplete=on_complete)
+
+
 def _parse_config(content: str, path: Path) -> LoopConfig:
     try:
         values = json_object_document(content, path)
@@ -87,11 +102,14 @@ def _parse_config(content: str, path: Path) -> LoopConfig:
     config = LoopConfig()
     agent = _agent_config(values.get("agent"))
     delivery = _delivery_config(values.get("delivery"))
+    hooks = _hooks_config(values.get("hooks"))
     runtime_root = json_node_string(values.get("runtimeRoot"))
     if agent is not None:
         config["agent"] = agent
     if delivery is not None:
         config["delivery"] = delivery
+    if hooks is not None:
+        config["hooks"] = hooks
     if runtime_root is not None:
         config["runtimeRoot"] = runtime_root
     return config
@@ -121,3 +139,11 @@ def delivery_config() -> DeliveryConfig:
     if configured is not None:
         delivery.update(configured)
     return delivery
+
+
+def on_complete_webhook() -> str | None:
+    hooks = load_global_config().get("hooks")
+    if hooks is None:
+        return None
+    url = hooks.get("onComplete")
+    return url or None

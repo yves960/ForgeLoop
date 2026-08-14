@@ -52,6 +52,8 @@ class CliHandlers(NamedTuple):
     config_clear_runtime_root: Callable[[CliArguments], int]
     config_show: Callable[[CliArguments], int]
     config_clear_agent: Callable[[CliArguments], int]
+    config_hook_on_complete: Callable[[CliArguments], int]
+    config_clear_hook_on_complete: Callable[[CliArguments], int]
     status: Callable[[CliArguments], int]
     cleanup: Callable[[CliArguments], int]
 
@@ -219,6 +221,18 @@ def build_parser(handlers: CliHandlers) -> argparse.ArgumentParser:
         help="Clear the configured coding agent",
     )
     clear_agent.set_defaults(func=handlers.config_clear_agent)
+
+    hook_on_complete = config_sub.add_parser(
+        "hook-on-complete",
+        help="Set a webhook URL fired once when a run reaches a terminal status",
+    )
+    _ = hook_on_complete.add_argument("url", help="HTTP(S) webhook URL")
+    hook_on_complete.set_defaults(func=handlers.config_hook_on_complete)
+    clear_hook = config_sub.add_parser(
+        "clear-hook-on-complete",
+        help="Clear the on-complete webhook",
+    )
+    clear_hook.set_defaults(func=handlers.config_clear_hook_on_complete)
 
     status = sub.add_parser("status", help="Show metadata for a run")
     _ = status.add_argument("run_id")

@@ -12,9 +12,11 @@ from config_commands import (
     clear_agent,
     clear_agent_arguments,
     clear_delivery,
+    clear_hook_on_complete,
     clear_runtime_root,
     configure_agent,
     configure_commit_template,
+    configure_hook_on_complete,
     configure_review_command,
     configure_runtime_root,
     show_config,
@@ -164,6 +166,14 @@ def cmd_config_clear_agent(_args: CliArguments) -> int:
     return clear_agent()
 
 
+def cmd_config_hook_on_complete(args: CliArguments) -> int:
+    return configure_hook_on_complete(args.url)
+
+
+def cmd_config_clear_hook_on_complete(_args: CliArguments) -> int:
+    return clear_hook_on_complete()
+
+
 def cli_handlers() -> CliHandlers:
     return CliHandlers(
         run=cmd_run,
@@ -178,6 +188,8 @@ def cli_handlers() -> CliHandlers:
         config_clear_runtime_root=cmd_config_clear_runtime_root,
         config_show=cmd_config_show,
         config_clear_agent=cmd_config_clear_agent,
+        config_hook_on_complete=cmd_config_hook_on_complete,
+        config_clear_hook_on_complete=cmd_config_clear_hook_on_complete,
         status=cmd_status,
         cleanup=cmd_cleanup,
     )
