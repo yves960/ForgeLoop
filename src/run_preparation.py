@@ -6,7 +6,11 @@ from typing import NamedTuple
 
 from agent_backend import AgentBackend
 from config_store import load_global_config
-from profile_store import EngineeringProfile, load_engineering_profile
+from profile_store import (
+    EngineeringProfile,
+    load_engineering_profile,
+    resolve_max_iterations,
+)
 from run_config_store import RunConfig
 from run_environment import (
     RepositoryContext,
@@ -163,8 +167,8 @@ def build_run_config(
     prepared: PreparedRun,
     worktree: WorktreeResult,
 ) -> RunConfig:
-    maximum = prepared.options.max_iterations or int(
-        prepared.profile.get("defaultMaxIterations", 5)
+    maximum = prepared.options.max_iterations or resolve_max_iterations(
+        prepared.profile
     )
     return RunConfig(
         runId=prepared.run_id,

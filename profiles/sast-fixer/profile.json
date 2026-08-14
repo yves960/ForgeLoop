@@ -1,6 +1,7 @@
 {
   "name": "sast-fixer",
   "description": "Repair source vulnerabilities reported by a deterministic SAST gate.",
+  "maxIterations": 10,
   "defaultMaxIterations": 7,
   "allowedPathSuffixes": [
     "src/main/",
@@ -14,7 +15,11 @@
   ],
   "verifier": {
     "type": "maven",
-    "arguments": ["-DskipTests", "verify", "-Psast"],
+    "arguments": [
+      "-DskipTests",
+      "verify",
+      "-Psast"
+    ],
     "passReason": "SAST_PASSED",
     "failReason": "SAST_FAILED"
   },

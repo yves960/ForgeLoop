@@ -11,6 +11,7 @@ from java_ut_verifier import (
     ProfileVerifierRequest,
     verify_profile,
 )
+from profile_store import DEFAULT_MAX_ITERATIONS
 from run_config_store import RunConfig, load_run_config
 from run_store import LoopResult
 from verifier_evidence import VerifierFeedback, render_verifier_feedback
@@ -59,6 +60,13 @@ def _write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="\n") as stream:
         _ = stream.write(content)
+
+
+def _effective_max_iterations(config: RunConfig) -> int:
+    value = config.get("maxIterations")
+    if isinstance(value, int) and value > 0:
+        return value
+    return DEFAULT_MAX_ITERATIONS
 
 
 def _next_iteration(runtime_dir: Path) -> int:
@@ -152,12 +160,55 @@ def _print_agent_failure(
     print(f"[loop] full output: .loop/iterations/{iteration:03d}/agent-output.txt")
 
 
+MAX_ITERATIONS_EXCEEDED: Final = "MAX_ITERATIONS_EXCEEDED"
+
+
+def _persist_max_iterations_result(
+    config: RunConfig,
+    iteration: int,
+    max_iterations: int,
+) -> None:
+    runtime_dir = Path(config["moduleDir"]) / RUNTIME_DIR_NAME
+    run_dir = Path(config["runDir"])
+    feedback = render_verifier_feedback(
+        VerifierFeedback(
+            "VERIFIER_FAIL",
+            MAX_ITERATIONS_EXCEEDED,
+            config["test"],
+            f"Iteration cap reached: {max_iterations} allowed, "
+            + f"iteration {iteration} requested. The repair loop is failed "
+            + "without running another coding-agent pass.",
+        )
+    )
+    _write_text(runtime_dir / "verifier-result.md", feedback)
+    result = LoopResult(
+        status="FAIL",
+        reason=MAX_ITERATIONS_EXCEEDED,
+        test=config["test"],
+        agentCommand=config["agent"]["command"],
+    )
+    result_json = json.dumps(result, ensure_ascii=False, indent=2)
+    _write_text(runtime_dir / "result.json", result_json)
+    _write_text(run_dir / "latest-verifier-result.md", feedback)
+    _write_text(run_dir / "latest-result.json", result_json)
+
+
 def run_iteration(config_path: Path) -> int:
     config = load_run_config(config_path)
     module_dir = Path(config["moduleDir"])
     runtime_dir = module_dir / RUNTIME_DIR_NAME
     runtime_dir.mkdir(parents=True, exist_ok=True)
     iteration = _next_iteration(runtime_dir)
+    max_iterations = _effective_max_iterations(config)
+    if iteration > max_iterations:
+        _persist_max_iterations_result(config, iteration, max_iterations)
+        print(
+            f"[loop] iteration {iteration}: circuit breaker tripped "
+            + f"(maxIterations={max_iterations})"
+        )
+        print(f"[loop] FAIL: {MAX_ITERATIONS_EXCEEDED}")
+        print(f"<promise>{ABORT_PROMISE}</promise>")
+        return 3
     iteration_dir = runtime_dir / "iterations" / f"{iteration:03d}"
     iteration_dir.mkdir(parents=True, exist_ok=True)
 

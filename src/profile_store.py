@@ -14,6 +14,8 @@ from structured_json import (
     json_object_document,
 )
 
+DEFAULT_MAX_ITERATIONS: int = 10
+
 
 class CompletionPolicy(TypedDict, total=False):
     requireVerifierPass: bool
@@ -30,6 +32,7 @@ class VerifierProfile(TypedDict, total=False):
 class EngineeringProfile(TypedDict, total=False):
     name: str
     description: str
+    maxIterations: int
     defaultMaxIterations: int
     allowedPathSuffixes: list[str]
     forbiddenAddedPatterns: list[str]
@@ -70,9 +73,13 @@ def parse_engineering_profile(
         if value is not None:
             profile[key] = value
 
-    maximum = json_node_integer(values.get("defaultMaxIterations"))
+    maximum = json_node_integer(values.get("maxIterations"))
     if maximum is not None:
-        profile["defaultMaxIterations"] = maximum
+        profile["maxIterations"] = maximum
+
+    legacy_maximum = json_node_integer(values.get("defaultMaxIterations"))
+    if legacy_maximum is not None:
+        profile["defaultMaxIterations"] = legacy_maximum
 
     for key in ("allowedPathSuffixes", "forbiddenAddedPatterns", "requiredPaths"):
         if key in values:
@@ -110,6 +117,15 @@ def parse_engineering_profile(
             completion["requireVerifierPass"] = required
         profile["completion"] = completion
     return profile
+
+
+def resolve_max_iterations(profile: EngineeringProfile) -> int:
+    """Effective iteration cap: maxIterations > legacy defaultMaxIterations > 10."""
+    for key in ("maxIterations", "defaultMaxIterations"):
+        value = profile.get(key)
+        if isinstance(value, int) and value > 0:
+            return value
+    return DEFAULT_MAX_ITERATIONS
 
 
 def load_engineering_profile(

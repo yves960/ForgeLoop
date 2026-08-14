@@ -1,6 +1,7 @@
 {
   "name": "java-ut-fixer",
   "description": "Repair one failing Java unit test under deterministic Maven verification.",
+  "maxIterations": 10,
   "defaultMaxIterations": 5,
   "allowedPathSuffixes": [
     "src/test/"
