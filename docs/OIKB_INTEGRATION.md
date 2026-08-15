@@ -36,16 +36,38 @@ oikb config set token <你的APIKey>            # key 只写入 oikb 用户级�
 ## 4. 手动同步
 
 ```bash
+# DRY-RUN（默认）：只打印差量
 ./scripts/sync-evidence.sh <run-id> <kb-id>
+
+# 真传：必须显式 --apply
+./scripts/sync-evidence.sh <run-id> <kb-id> --apply
 ```
 
 脚本核心即：
 
 ```bash
-oikb sync $LOOP_HOME/runs/<run-id>/evidence/ --kb-id <kb-id>
+oikb sync $LOOP_HOME/runs/<run-id>/evidence/ --kb-id <kb-id> \
+  --include "*.txt" --include "*.md" --include "*.json" --include "*.log" \
+  --exclude "*.env" --exclude "*secret*" --exclude "*token*" --exclude "*auth*" \
+  --exclude "*credential*" --exclude "*password*" --exclude "*key*" \
+  --exclude "*private*" --exclude ".DS_Store"
 ```
 
 evidence 目录定位优先级：`LOOP_ENGINEERING_HOME` → 仓库同级 `.loop-engineering/` → `$LOOP_HOME/runs/`。
+
+## 4.5. 安全：include/exclude glob 与默认 dry-run
+
+**为什么必须有 glob？** oikb 默认无 include/exclude → 扫整个源目录 → 任何普通文件都会被列为上传候选。干跑 `/tmp` 时一次就命中 `authstore.json`（含 zai + minimax API key）和 `oa_token.txt`（OAuth JWT）。真传会把 **密钥推到 Open WebUI KB**。
+
+**本脚本的安全默认值（见 `scripts/sync-evidence.sh` 的 `SAFETY GLOBS` 段）：**
+
+- 白名单（只收）：`*.txt` `*.md` `*.json` `*.log`
+- 黑名单（拒收）：`*.env` `*secret*` `*token*` `*auth*` `*credential*` `*password*` `*key*` `*private*` `.DS_Store`
+- **默认 DRY-RUN**（不传 `--apply` 不真传）
+- kb-id 强校验 UUID 格式（防参数错位把内容传到错误 KB）
+- macOS Clash 代理屏蔽（防 localhost 被劫持成 502）
+
+**新增 evidence 产物（如 `*.xml`、`*.csv`）必须同步更新白名单。** 改 `scripts/sync-evidence.sh` 的 `INCLUDE` 数组是单一真相源。
 
 ## 5. 自动触发：loop config hook-on-complete
 
