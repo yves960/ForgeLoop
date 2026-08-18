@@ -26,6 +26,7 @@ class WorktreeRequest(NamedTuple):
     run_id: str
     run_dir: Path
     snapshot_local_changes: bool = True
+    execution_id: str | None = None
 
 
 class WorktreeResult(NamedTuple):
@@ -198,7 +199,10 @@ def tree_changed_files(repo_root: Path, base_tree: str, current_tree: str) -> li
 
 def create_worktree(request: WorktreeRequest) -> WorktreeResult:
     source_head = _git(["rev-parse", "HEAD"], request.repo_root).stdout.strip()
-    branch = f"loop/{request.profile}/{request.run_id}"
+    # External correlation wins: loop/<profile>/<execution-id> when the caller
+    # supplied one, otherwise the legacy loop/<profile>/<run_id> shape.
+    branch_suffix = request.execution_id or request.run_id
+    branch = f"loop/{request.profile}/{branch_suffix}"
     runtime_root = request.run_dir.parent.parent
     safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "-", request.repo_root.name).strip("-")
     worktree_root = runtime_root / "worktrees" / (safe_name or "repo") / request.run_id

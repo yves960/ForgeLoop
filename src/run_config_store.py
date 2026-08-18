@@ -53,6 +53,7 @@ class RequiredRunConfig(TypedDict):
 
 class RunConfig(RequiredRunConfig, total=False):
     baseCommit: str
+    executionId: str
 
 
 class RunConfigReadError(RuntimeError):
@@ -163,6 +164,7 @@ def _parse_run_config(
         agent=agent,
         maxIterations=_required_integer(values, "maxIterations", path),
         runDir=_required_string(values, "runDir", path),
+        executionId=json_node_string(values.get("executionId")) or None,
     )
 
 

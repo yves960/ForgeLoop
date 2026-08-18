@@ -46,6 +46,7 @@ class RunOptions(NamedTuple):
     profiles_dir: Path
     entrypoint: Path
     python_executable: str
+    execution_id: str | None = None
 
 
 class PreparedRun(NamedTuple):
@@ -159,6 +160,7 @@ def create_isolated_worktree(prepared: PreparedRun) -> WorktreeResult:
             profile=prepared.options.profile,
             run_id=prepared.run_id,
             run_dir=prepared.run_dir,
+            execution_id=prepared.options.execution_id,
         )
     )
 
@@ -192,6 +194,7 @@ def build_run_config(
         agent=prepared.agent,
         maxIterations=maximum,
         runDir=str(prepared.run_dir),
+        executionId=prepared.options.execution_id or None,
     )
 
 
@@ -215,4 +218,5 @@ def initial_run_record(config: RunConfig) -> RunRecord:
         runDir=config["runDir"],
         startedAt=run_timestamp(),
         status="RUNNING",
+        **({"executionId": config["executionId"]} if config.get("executionId") else {}),
     )

@@ -1,16 +1,20 @@
 """Best-effort on-complete webhook notifier.
 
-Contract (v1): one POST per run, fired only when the run reaches a terminal
+Contract (v1.1): one POST per run, fired only when the run reaches a terminal
 ``pass``/``fail`` status (never mid-loop retries, BLOCKED, NOOP, or ERROR).
 Payload is JSON:
 
     {
       "run_id": "<loop run id>",
+      "execution_id": "<external execution id, e.g. WorkMesh exec-...-...>",
       "status": "pass" | "fail",
       "evidence_uri": "<absolute path to runs/<id>/evidence>",
       "diff_summary": ["path/changed/file.py", ...],
       "profile_name": "<profile>"
     }
+
+``execution_id`` is null for purely local runs started without
+``loop run --execution-id``.
 
 Delivery is idempotent per run: after a successful POST the run record is
 marked, so later trigger points (e.g. ``loop submit``) do not re-fire.
@@ -41,6 +45,7 @@ def build_callback_payload(record: RunRecord) -> dict[str, object]:
     status = str(record.get("status", "")).upper()
     return {
         "run_id": record.get("runId"),
+        "execution_id": record.get("executionId"),
         "status": status.lower(),
         "evidence_uri": str(run_dir / "evidence"),
         "diff_summary": list(record.get("changedFiles", ())),

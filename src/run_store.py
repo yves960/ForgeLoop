@@ -66,6 +66,7 @@ class RunIdentity(TypedDict):
 
 class RunRecord(RunIdentity, total=False):
     reason: str | None
+    executionId: str
     moduleDir: str
     sourceHead: str
     baseTree: str
@@ -160,6 +161,7 @@ def _run_record(nodes: Mapping[str, ast.expr], path: Path) -> RunRecord:
         "endedAt",
         "finalTree",
         "cleanedAt",
+        "executionId",
     ):
         value = json_node_string(nodes.get(key))
         if value is not None:

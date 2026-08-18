@@ -135,6 +135,7 @@ class WebhookHookTests(unittest.TestCase):
             hook_notify.build_callback_payload(record),
             {
                 "run_id": "run-test-1",
+                "execution_id": None,
                 "status": "fail",
                 "evidence_uri": str(run_dir / "evidence"),
                 "diff_summary": ["src/main/java/Foo.java"],

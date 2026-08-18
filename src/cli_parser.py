@@ -18,6 +18,7 @@ class CliArguments(argparse.Namespace):
     test: str = ""
     target: str = ""
     max_iterations: int | None = None
+    execution_id: str | None = None
     agent_command: str | None = None
     agent_protocol: str | None = None
     agent_arg: list[str] | None = None
@@ -77,6 +78,15 @@ def build_parser(handlers: CliHandlers) -> argparse.ArgumentParser:
         help="Profile-specific scan, rule set, component, or dependency target",
     )
     _ = run.add_argument("--max-iterations", type=int, default=None)
+    _ = run.add_argument(
+        "--execution-id",
+        default=None,
+        help=(
+            "External execution id (e.g. WorkMesh exec-YYYYMMDD-XXXXXX); "
+            + "persisted to run.json, echoed in the worktree branch name and "
+            + "the on-complete webhook payload"
+        ),
+    )
     _ = run.add_argument(
         "--agent-command",
         default=None,

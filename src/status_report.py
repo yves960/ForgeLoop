@@ -60,6 +60,7 @@ def build_status_document(request: StatusReportRequest) -> dict[str, object]:
     evidence_dir = request.run_dir / "evidence"
     return {
         "runId": record.get("runId", request.run_id),
+        "executionId": record.get("executionId"),
         "profileName": record.get("profileName"),
         "status": record.get("status", "UNKNOWN"),
         "reason": record.get("reason"),

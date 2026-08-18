@@ -66,6 +66,7 @@ def cmd_run(args: CliArguments) -> int:
             PROFILES_DIR,
             SCRIPT_DIR / "loop_cli.py",
             sys.executable,
+            args.execution_id,
         )
     )
 
