@@ -229,7 +229,7 @@ def write_run_record(run_dir: Path, record: RunRecord) -> None:
 def load_run_record(run_id: str) -> tuple[Path, RunRecord]:
     configured_root = load_global_config().get("runtimeRoot")
     run_dir = locate_run(run_id, configured_root)
-    return read_run_record(run_dir)
+    return run_dir, read_run_record(run_dir)
 
 
 def read_run_record(run_dir: Path) -> RunRecord:

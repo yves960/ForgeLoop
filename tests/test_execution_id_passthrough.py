@@ -207,6 +207,40 @@ class RunJsonPersistenceTests(unittest.TestCase):
         self.assertNotIn("executionId", record)
 
 
+class LoadRunRecordTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.run_dir = Path(self._tmp.name) / "runs" / "run-exec-1"
+        self.run_dir.mkdir(parents=True)
+
+    def test_load_run_record_returns_dir_and_record(self) -> None:
+        # Regression: load_run_record used to return the bare record, crashing
+        # every `loop status|cleanup|submit` caller with an unpack error.
+        import runtime_store
+
+        config = dict(_base_config(self.run_dir), executionId="exec-test-123456")
+        record = initial_run_record(config)  # type: ignore[arg-type]
+        write_run_record(self.run_dir, record)
+
+        original_index = runtime_store.run_index_path
+        original_config = sys.modules["config_store"].global_config_path
+        runtime_store.run_index_path = lambda: self.run_dir.parent / "runs-index.json"
+        sys.modules["config_store"].global_config_path = (
+            lambda: self.run_dir.parent / "config.json"
+        )
+        try:
+            runtime_store.register_run("run-exec-1", self.run_dir)
+            from run_store import load_run_record
+
+            run_dir, loaded = load_run_record("run-exec-1")
+        finally:
+            runtime_store.run_index_path = original_index
+            sys.modules["config_store"].global_config_path = original_config
+        self.assertEqual(run_dir, self.run_dir)
+        self.assertEqual(loaded["executionId"], "exec-test-123456")
+
+
 class WebhookPayloadTests(unittest.TestCase):
     def test_payload_includes_execution_id(self) -> None:
         run_dir = Path("/tmp/runs/run-exec-1")
