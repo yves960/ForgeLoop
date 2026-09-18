@@ -44,6 +44,7 @@ def _handlers() -> CliHandlers:
         config_clear_hook_on_complete=_noop,
         status=_noop,
         cleanup=_noop,
+        gc=_noop,
     )
 
 

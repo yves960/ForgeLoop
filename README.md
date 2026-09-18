@@ -438,3 +438,16 @@ Loop 不再把 Ralph 的长自然语言 prompt 穿过 `.cmd/.bat` 链。每轮 A
 ```
 
 完整任务、上一轮 Verifier 结果和 Maven 输出都通过 `.loop/` 文件协议交换。这样避免 Windows batch 引号丢失导致 `too many arguments`，也让迭代证据可持久化和审计。
+
+## Development quickstart
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest tests/
+```
+
+CLI 直跑：`python3 src/loop_cli.py --help`（Windows 用 `loop.cmd`）。
+
+- `loop status --list`：最近 20 条 run（按 created_at 倒序）
+- `loop gc --dry-run` / `loop gc --prune`：报告/清理 run-index 中的死条目（failed/missing 且 30 天未见）

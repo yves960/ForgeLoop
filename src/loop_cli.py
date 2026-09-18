@@ -25,6 +25,7 @@ from iteration_runner import run_iteration_cli
 from run_controller import execute_run
 from run_preparation import RunOptions
 from run_store import load_run_record, write_run_record
+from runtime_store import RunNotFoundError, list_run_index, prune_run_index
 from status_report import (
     StatusReportRequest,
     build_status_document,
@@ -52,6 +53,22 @@ def local_now() -> dt.datetime:
 
 
 def cmd_run(args: CliArguments) -> int:
+    known_profiles = (
+        sorted(entry.name for entry in PROFILES_DIR.iterdir() if (entry / "profile.json").is_file())
+        if PROFILES_DIR.is_dir()
+        else []
+    )
+    if args.profile not in known_profiles:
+        eprint(f"[loop] ERROR: Unknown profile: {args.profile}")
+        eprint(
+            "        Available: "
+            + (", ".join(known_profiles) if known_profiles else f"(none found under {PROFILES_DIR})")
+        )
+        return 1
+    if not (args.test or args.target):
+        eprint("[loop] ERROR: one of --test / --target is required")
+        eprint("        e.g. loop run java-ut-fixer --test com.example.FooTest")
+        return 1
     return execute_run(
         RunOptions(
             args.profile,
@@ -72,7 +89,14 @@ def cmd_run(args: CliArguments) -> int:
 
 
 def cmd_status(args: CliArguments) -> int:
-    run_dir, meta = load_run_record(args.run_id)
+    if args.list_runs:
+        return print_run_list()
+    try:
+        run_dir, meta = load_run_record(args.run_id)
+    except RunNotFoundError:
+        eprint(f"[loop] ERROR: Run not found: {args.run_id}")
+        eprint("        Use 'loop status --list' to see available runs.")
+        return 1
     request = StatusReportRequest(args.run_id, run_dir, meta, os.name == "nt")
     if args.json:
         print(json.dumps(build_status_document(request), ensure_ascii=False, indent=2))
@@ -81,8 +105,28 @@ def cmd_status(args: CliArguments) -> int:
     return 0
 
 
+def print_run_list(limit: int = 20) -> int:
+    entries = sorted(
+        list_run_index().items(),
+        key=lambda item: item[1].created_at,
+        reverse=True,
+    )[:limit]
+    if not entries:
+        print("[loop] no runs registered yet")
+        return 0
+    print(f"{'RUN ID':<40} {'STATUS':<10} {'CREATED':<20} PATH")
+    for run_id, entry in entries:
+        print(f"{run_id[:39]:<40} {entry.status[:9]:<10} {entry.created_at[:19]:<20} {entry.path}")
+    return 0
+
+
 def cmd_cleanup(args: CliArguments) -> int:
-    run_dir, meta = load_run_record(args.run_id)
+    try:
+        run_dir, meta = load_run_record(args.run_id)
+    except RunNotFoundError:
+        eprint(f"[loop] ERROR: Run not found: {args.run_id}")
+        eprint("        Use 'loop status --list' to see available runs.")
+        return 1
     repo_root = Path(meta["repoRoot"])
     wt_root = Path(meta["worktreeRoot"])
     branch = meta.get("branch")
@@ -175,6 +219,18 @@ def cmd_config_clear_hook_on_complete(_args: CliArguments) -> int:
     return clear_hook_on_complete()
 
 
+def cmd_gc(args: CliArguments) -> int:
+    dry_run = args.dry_run or not args.prune
+    removed = prune_run_index(dry_run=dry_run)
+    if not removed:
+        print("[loop] gc: nothing to prune")
+        return 0
+    verb = "would prune" if dry_run else "pruned"
+    for run_id, status, path in removed:
+        print(f"[loop] gc: {verb} {run_id} (status={status}) {path}")
+    return 0
+
+
 def cli_handlers() -> CliHandlers:
     return CliHandlers(
         run=cmd_run,
@@ -193,6 +249,7 @@ def cli_handlers() -> CliHandlers:
         config_clear_hook_on_complete=cmd_config_clear_hook_on_complete,
         status=cmd_status,
         cleanup=cmd_cleanup,
+        gc=cmd_gc,
     )
 
 
@@ -208,6 +265,10 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         eprint("\n[loop] interrupted")
         return 130
+    except RunNotFoundError as exc:
+        eprint(f"[loop] ERROR: {exc}")
+        eprint("        Use 'loop status --list' to see available runs.")
+        return 1
     except (OSError, UnicodeError, RuntimeError, ValueError) as exc:
         eprint(f"[loop] ERROR: {exc}")
         return 2

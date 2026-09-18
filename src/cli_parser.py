@@ -26,6 +26,9 @@ class CliArguments(argparse.Namespace):
     require_clean: bool = False
     run_id: str = ""
     json: bool = False
+    list_runs: bool = False
+    prune: bool = False
+    dry_run: bool = False
     yes: bool = False
     message: str | None = None
     message_file: str | None = None
@@ -57,6 +60,7 @@ class CliHandlers(NamedTuple):
     config_clear_hook_on_complete: Callable[[CliArguments], int]
     status: Callable[[CliArguments], int]
     cleanup: Callable[[CliArguments], int]
+    gc: Callable[[CliArguments], int]
 
 
 def build_parser(handlers: CliHandlers) -> argparse.ArgumentParser:
@@ -68,7 +72,7 @@ def build_parser(handlers: CliHandlers) -> argparse.ArgumentParser:
 
     run = sub.add_parser("run", help="Run a Loop Engineering profile")
     _ = run.add_argument("profile")
-    target = run.add_mutually_exclusive_group(required=True)
+    target = run.add_mutually_exclusive_group(required=False)
     _ = target.add_argument(
         "--test",
         help="JUnit test class or Class#method (java-ut-fixer)",
@@ -245,11 +249,17 @@ def build_parser(handlers: CliHandlers) -> argparse.ArgumentParser:
     clear_hook.set_defaults(func=handlers.config_clear_hook_on_complete)
 
     status = sub.add_parser("status", help="Show metadata for a run")
-    _ = status.add_argument("run_id")
+    _ = status.add_argument("run_id", nargs="?", help="Omit with --list to browse runs")
     _ = status.add_argument(
         "--json",
         action="store_true",
         help="Emit a machine-readable status document (for the AICP bridge)",
+    )
+    _ = status.add_argument(
+        "--list",
+        dest="list_runs",
+        action="store_true",
+        help="List the 20 most recent runs from the run index",
     )
     status.set_defaults(func=handlers.status)
     cleanup = sub.add_parser(
@@ -259,4 +269,19 @@ def build_parser(handlers: CliHandlers) -> argparse.ArgumentParser:
     _ = cleanup.add_argument("run_id")
     _ = cleanup.add_argument("--delete-branch", action="store_true")
     cleanup.set_defaults(func=handlers.cleanup)
+    gc = sub.add_parser(
+        "gc",
+        help="Prune stale entries (failed/missing, older than 30 days) from the run index",
+    )
+    _ = gc.add_argument(
+        "--prune",
+        action="store_true",
+        help="Actually remove stale entries (default: report only)",
+    )
+    _ = gc.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be pruned without writing",
+    )
+    gc.set_defaults(func=handlers.gc)
     return parser

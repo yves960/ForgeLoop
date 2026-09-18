@@ -1,0 +1,4 @@
+pytest>=8.0
+pytest-cov>=4.0
+pyright>=1.1.300
+ruff>=0.5.0
