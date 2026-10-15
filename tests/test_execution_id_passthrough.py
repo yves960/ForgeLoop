@@ -45,6 +45,7 @@ def _handlers() -> CliHandlers:
         status=_noop,
         cleanup=_noop,
         gc=_noop,
+        doctor=_noop,
     )
 
 

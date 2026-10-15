@@ -27,8 +27,11 @@ class CliArguments(argparse.Namespace):
     run_id: str = ""
     json: bool = False
     list_runs: bool = False
+    status_filter: str = ""
     prune: bool = False
     dry_run: bool = False
+    max_age: str = "30d"
+    fix: bool = False
     yes: bool = False
     message: str | None = None
     message_file: str | None = None
@@ -61,6 +64,7 @@ class CliHandlers(NamedTuple):
     status: Callable[[CliArguments], int]
     cleanup: Callable[[CliArguments], int]
     gc: Callable[[CliArguments], int]
+    doctor: Callable[[CliArguments], int]
 
 
 def build_parser(handlers: CliHandlers) -> argparse.ArgumentParser:
@@ -261,6 +265,12 @@ def build_parser(handlers: CliHandlers) -> argparse.ArgumentParser:
         action="store_true",
         help="List the 20 most recent runs from the run index",
     )
+    _ = status.add_argument(
+        "--status",
+        dest="status_filter",
+        default="",
+        help="With --list: only show entries with this derived status (e.g. error / missing / pass)",
+    )
     status.set_defaults(func=handlers.status)
     cleanup = sub.add_parser(
         "cleanup",
@@ -283,5 +293,21 @@ def build_parser(handlers: CliHandlers) -> argparse.ArgumentParser:
         action="store_true",
         help="Show what would be pruned without writing",
     )
+    _ = gc.add_argument(
+        "--max-age",
+        dest="max_age",
+        default="30d",
+        help="Prune threshold in days: 30d / 7d / 30 (default 30d)",
+    )
     gc.set_defaults(func=handlers.gc)
+    doctor = sub.add_parser(
+        "doctor",
+        help="One-shot environment self-check (interpreter / vcs / build / venv tools / run-index)",
+    )
+    _ = doctor.add_argument(
+        "--fix",
+        action="store_true",
+        help="Attempt to fix missing venv dev tools (pip install -r requirements-dev.txt)",
+    )
+    doctor.set_defaults(func=handlers.doctor)
     return parser

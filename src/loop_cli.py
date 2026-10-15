@@ -26,6 +26,7 @@ from run_controller import execute_run
 from run_preparation import RunOptions
 from run_store import load_run_record, write_run_record
 from runtime_store import RunNotFoundError, list_run_index, prune_run_index
+from loop_doctor import fix_venv_tools, render_doctor, run_doctor
 from status_report import (
     StatusReportRequest,
     build_status_document,
@@ -90,7 +91,7 @@ def cmd_run(args: CliArguments) -> int:
 
 def cmd_status(args: CliArguments) -> int:
     if args.list_runs:
-        return print_run_list()
+        return print_run_list(status_filter=args.status_filter or None)
     try:
         run_dir, meta = load_run_record(args.run_id)
     except RunNotFoundError:
@@ -105,18 +106,26 @@ def cmd_status(args: CliArguments) -> int:
     return 0
 
 
-def print_run_list(limit: int = 20) -> int:
+def print_run_list(limit: int = 20, status_filter: str | None = None) -> int:
     entries = sorted(
         list_run_index().items(),
         key=lambda item: item[1].created_at,
         reverse=True,
-    )[:limit]
+    )
+    if status_filter:
+        wanted = status_filter.lower()
+        entries = [item for item in entries if item[1].status == wanted]
+    entries = entries[:limit]
     if not entries:
-        print("[loop] no runs registered yet")
+        print("[loop] no matching runs in the index")
         return 0
     print(f"{'RUN ID':<40} {'STATUS':<10} {'CREATED':<20} PATH")
     for run_id, entry in entries:
-        print(f"{run_id[:39]:<40} {entry.status[:9]:<10} {entry.created_at[:19]:<20} {entry.path}")
+        # 1970 epoch 兜底只影响人读表格；--json 保持机器契约不变
+        created = entry.created_at[:19]
+        if created.startswith("1970"):
+            created = "<mtime-unknown>"
+        print(f"{run_id[:39]:<40} {entry.status[:9]:<10} {created:<20} {entry.path}")
     return 0
 
 
@@ -219,15 +228,36 @@ def cmd_config_clear_hook_on_complete(_args: CliArguments) -> int:
     return clear_hook_on_complete()
 
 
+def parse_max_age(value: str) -> int:
+    text = str(value or "").strip().lower()
+    if text.endswith("d"):
+        text = text[:-1]
+    days = int(text) if text.isdigit() else 0
+    if days < 1:
+        raise ValueError("--max-age 需为正整数天数，如 7d 或 30")
+    return days
+
+
 def cmd_gc(args: CliArguments) -> int:
     dry_run = args.dry_run or not args.prune
-    removed = prune_run_index(dry_run=dry_run)
+    removed = prune_run_index(dry_run=dry_run, max_age_days=parse_max_age(args.max_age))
     if not removed:
         print("[loop] gc: nothing to prune")
         return 0
     verb = "would prune" if dry_run else "pruned"
     for run_id, status, path in removed:
         print(f"[loop] gc: {verb} {run_id} (status={status}) {path}")
+    return 0
+
+
+def cmd_doctor(args: CliArguments) -> int:
+    if args.fix:
+        print(f"[loop] doctor --fix: {fix_venv_tools(ROOT_DIR)}")
+    report, failures = render_doctor(run_doctor(ROOT_DIR))
+    print(report)
+    if failures:
+        eprint("[loop] doctor: 存在必须修复项（✗），见上方 fix 提示")
+        return 1
     return 0
 
 
@@ -250,6 +280,7 @@ def cli_handlers() -> CliHandlers:
         status=cmd_status,
         cleanup=cmd_cleanup,
         gc=cmd_gc,
+        doctor=cmd_doctor,
     )
 
 
