@@ -32,6 +32,7 @@ class CliArguments(argparse.Namespace):
     dry_run: bool = False
     max_age: str = "30d"
     fix: bool = False
+    strict: bool = False
     yes: bool = False
     message: str | None = None
     message_file: str | None = None
@@ -308,6 +309,11 @@ def build_parser(handlers: CliHandlers) -> argparse.ArgumentParser:
         "--fix",
         action="store_true",
         help="Attempt to fix missing venv dev tools (pip install -r requirements-dev.txt)",
+    )
+    _ = doctor.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit 1 on any warn/fail (CI gate); env LOOP_DOCTOR_STRICT=1 also enables",
     )
     doctor.set_defaults(func=handlers.doctor)
     return parser

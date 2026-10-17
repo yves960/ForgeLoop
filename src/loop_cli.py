@@ -234,7 +234,7 @@ def parse_max_age(value: str) -> int:
         text = text[:-1]
     days = int(text) if text.isdigit() else 0
     if days < 1:
-        raise ValueError("--max-age 需为正整数天数，如 7d 或 30")
+        raise ValueError("--max-age 需为正整数天数，支持 Nd 后缀或纯数字（如 7d 或 30）")
     return days
 
 
@@ -255,10 +255,19 @@ def cmd_doctor(args: CliArguments) -> int:
         print(f"[loop] doctor --fix: {fix_venv_tools(ROOT_DIR)}")
     report, failures = render_doctor(run_doctor(ROOT_DIR))
     print(report)
+    warns = sum(1 for line in report.splitlines() if "⚠" in line)
+    strict = args.strict or bool(os.environ.get("LOOP_DOCTOR_STRICT"))
+    if strict and (failures or warns):
+        eprint(f"[loop] doctor --strict: 存在 ✗/{fails_hint(warns)}，环境未就绪")
+        return 1
     if failures:
         eprint("[loop] doctor: 存在必须修复项（✗），见上方 fix 提示")
         return 1
     return 0
+
+
+def fails_hint(warns: int) -> str:
+    return f"⚠×{warns}" if warns else "✗"
 
 
 def cli_handlers() -> CliHandlers:

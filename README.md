@@ -451,3 +451,11 @@ CLI 直跑：`python3 src/loop_cli.py --help`（Windows 用 `loop.cmd`）。
 
 - `loop status --list`：最近 20 条 run（按 created_at 倒序）
 - `loop gc --dry-run` / `loop gc --prune`：报告/清理 run-index 中的死条目（failed/missing 且 30 天未见）
+
+## Architecture
+
+- **BRIDGE architecture**（trigger / webhook / circuit-breaker）— [docs/BRIDGE.md](docs/BRIDGE.md)
+- **Profile catalog**（codecheck-fixer / dependency-upgrader / java-ut-fixer / sast-fixer / sca-upgrader）— [profiles/](profiles/)
+- **Verifier model**（Maven 构建与 UT 验证）— [src/maven_verifier.py](src/maven_verifier.py) · [src/java_ut_verifier.py](src/java_ut_verifier.py)
+
+`loop doctor` 可一键自检环境（`--strict` 或 `LOOP_DOCTOR_STRICT=1` 时任何 ⚠/✗ 都 exit 1，可作 CI gate）。

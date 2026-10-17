@@ -48,10 +48,11 @@ def check_path_command(name: str, binary: str, *, optional: bool = False, hint: 
     return CheckResult(name, OK, f"{path} ({version})" if version else path)
 
 
-def _check_venv_tool(repo_root: Path, tool: str) -> CheckResult:
+def _check_venv_tool(repo_root: Path, tool: str, label: str | None = None) -> CheckResult:
+    name = label or tool
     python = repo_root / ".venv" / "bin" / "python"
     if not python.exists():
-        return CheckResult(tool, WARN, ".venv 未创建", "python3 -m venv .venv && " + DEV_REQUIREMENTS_HINT)
+        return CheckResult(name, WARN, ".venv 未创建", "python3 -m venv .venv && " + DEV_REQUIREMENTS_HINT)
     probe = subprocess.run(
         [str(python), "-m", tool, "--version"],
         capture_output=True,
@@ -59,9 +60,9 @@ def _check_venv_tool(repo_root: Path, tool: str) -> CheckResult:
         timeout=30,
     )
     if probe.returncode != 0:
-        return CheckResult(tool, WARN, "venv 存在但未安装", DEV_REQUIREMENTS_HINT)
+        return CheckResult(name, WARN, "venv 存在但未安装", DEV_REQUIREMENTS_HINT)
     lines = (probe.stdout or probe.stderr).strip().splitlines()
-    return CheckResult(tool, OK, lines[0] if lines else ".venv 内可用")
+    return CheckResult(name, OK, lines[0] if lines else ".venv 内可用")
 
 
 def check_run_index_health() -> CheckResult:
@@ -81,9 +82,9 @@ def run_doctor(repo_root: Path) -> list[CheckResult]:
         check_path_command("python3", "python3"),
         check_path_command("git", "git"),
         check_path_command("maven (mvn)", "mvn", optional=True, hint="brew install maven，或 loop run --maven 指定 mvnw 路径"),
-        _check_venv_tool(repo_root, "pytest"),
-        _check_venv_tool(repo_root, "pyright"),
-        _check_venv_tool(repo_root, "ruff"),
+        _check_venv_tool(repo_root, "pytest", label=".venv pytest"),
+        _check_venv_tool(repo_root, "pyright", label=".venv pyright"),
+        _check_venv_tool(repo_root, "ruff", label=".venv ruff"),
         check_run_index_health(),
     ]
 
