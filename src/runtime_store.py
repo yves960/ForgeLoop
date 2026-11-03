@@ -161,7 +161,47 @@ def list_run_index() -> dict[str, RunIndexEntry]:
     }
 
 
-_PRUNABLE_STATUSES = frozenset({"fail", "failed", "error", "missing"})
+_PRUNABLE_STATUSES = frozenset({"fail", "failed", "error", "missing", "failed:abandoned"})
+
+#: 蔚 11-03 工单#1：RUNNING 超过该天数视为僵尸（进程早死但索引永挂）
+ZOMBIE_RUNNING_DAYS = 7
+
+
+def find_zombie_runs(threshold_days: int = ZOMBIE_RUNNING_DAYS) -> list[tuple[str, str, str]]:
+    """RUNNING 且 created_at 超阈值——报告用，不改状态；处置走 mark_zombie_runs。"""
+    index = _load_run_index()
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=threshold_days)
+    zombies: list[tuple[str, str, str]] = []
+    for run_id, entry in index.items():
+        if derive_run_status(entry) != "running":
+            continue
+        try:
+            started = dt.datetime.fromisoformat(entry.created_at)
+        except ValueError:
+            continue
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=dt.timezone.utc)
+        if started < cutoff:
+            zombies.append((run_id, entry.created_at, entry.path))
+    return zombies
+
+
+def mark_zombie_runs(threshold_days: int = ZOMBIE_RUNNING_DAYS) -> list[tuple[str, str, str]]:
+    """僵尸 RUNNING → failed:abandoned 终态（转不删，蔚口径二选一取转：
+    保留历史与现场——78 天僵尸的目标测试实际已被后继 run 修复，
+    abandoned 诚实记录这段矛盾而非抹掉）。"""
+    marked: list[tuple[str, str, str]] = []
+    for run_id, started, path in find_zombie_runs(threshold_days):
+        record_path = Path(path) / "run.json"
+        try:
+            document = json.loads(record_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        document["status"] = "failed:abandoned"
+        document["abandonedAt"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+        record_path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
+        marked.append((run_id, started, path))
+    return marked
 
 
 def prune_run_index(dry_run: bool = False, max_age_days: int = 30) -> list[tuple[str, str, str]]:

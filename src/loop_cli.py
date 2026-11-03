@@ -25,7 +25,13 @@ from iteration_runner import run_iteration_cli
 from run_controller import execute_run
 from run_preparation import RunOptions
 from run_store import load_run_record, write_run_record
-from runtime_store import RunNotFoundError, list_run_index, prune_run_index
+from runtime_store import (
+    RunNotFoundError,
+    find_zombie_runs,
+    list_run_index,
+    mark_zombie_runs,
+    prune_run_index,
+)
 from loop_doctor import fix_venv_tools, render_doctor, run_doctor
 from status_report import (
     StatusReportRequest,
@@ -240,8 +246,15 @@ def parse_max_age(value: str) -> int:
 
 def cmd_gc(args: CliArguments) -> int:
     dry_run = args.dry_run or not args.prune
+    # 蔚 11-03 工单#1：僵尸 RUNNING 治理——报告模式列出，--prune 转 failed:abandoned
+    zombies = find_zombie_runs()
+    for run_id, started, _path in zombies:
+        verb = "zombie→failed:abandoned" if not dry_run else "zombie（--prune 转 failed:abandoned）"
+        print(f"[loop] gc: {verb} {run_id} (started {started})")
+    if zombies and not dry_run:
+        mark_zombie_runs()
     removed = prune_run_index(dry_run=dry_run, max_age_days=parse_max_age(args.max_age))
-    if not removed:
+    if not removed and not zombies:
         print("[loop] gc: nothing to prune")
         return 0
     verb = "would prune" if dry_run else "pruned"

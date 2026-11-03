@@ -6,3 +6,6 @@ __pycache__/
 .loop/
 .ralph/
 .DS_Store
+
+# 蔚 11-03 工单#5：每日测试时长记录（运行时日志）
+.test-durations.log

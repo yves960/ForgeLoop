@@ -4,12 +4,14 @@
 """
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from runtime_store import list_run_index
+from runtime_store import find_zombie_runs, list_run_index
 
 OK = "✓"
 WARN = "⚠"
@@ -77,15 +79,89 @@ def check_run_index_health() -> CheckResult:
     return CheckResult("run-index health", state, f"{alive}/{total} real（{percent}%）", hint)
 
 
+def check_java_runtime() -> CheckResult:
+    """蔚 11-03 P1：此前不查 Java 运行时——本机 mvn 在而 JDK 缺位时
+    绿灯是假阳性（mvn 直接报 Unable to locate a Java Runtime，5/5 profile 全 Maven 系）。"""
+    java_home = os.environ.get("JAVA_HOME", "").strip()
+    if java_home and (Path(java_home) / "bin" / "java").exists():
+        return CheckResult("java runtime (JDK)", OK, f"JAVA_HOME → {java_home}")
+    finder = "/usr/libexec/java_home"
+    if Path(finder).exists():
+        try:
+            out = subprocess.run([finder], capture_output=True, text=True, timeout=10)
+            if out.returncode == 0 and out.stdout.strip():
+                return CheckResult("java runtime (JDK)", OK, f"/usr/libexec/java_home → {out.stdout.strip()}")
+            # macOS 权威判据：finder 在而非零 = 无 JDK——不能落到 PATH（/usr/bin/java
+            # 是系统 stub，存在但执行即报错，which 命中是假阳性，蔚 11-03 实测 mvn 即炸）
+            return CheckResult(
+                "java runtime (JDK)",
+                WARN,
+                "无 JDK（/usr/libexec/java_home 无可用 JVM）——mvn 将报 Unable to locate a Java Runtime，run 闭环在本机不可用",
+                "brew install --cask temurin@17 或设 JAVA_HOME（owner 已知会）",
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    which = shutil.which("java")
+    if which:
+        return CheckResult("java runtime (JDK)", OK, which)
+    return CheckResult(
+        "java runtime (JDK)",
+        WARN,
+        "未找到 JDK（JAVA_HOME / /usr/libexec/java_home / PATH 均无）——mvn 将报 Unable to locate a Java Runtime，run 闭环在本机不可用",
+        "brew install --cask temurin@17 或设 JAVA_HOME（owner 已知会）",
+    )
+
+
+def check_maven_runtime() -> CheckResult:
+    """蔚 11-03 P1：PATH 之外纳入历史 run.json 里配置过的 mvn 路径（假阴性修正
+    ——本机 mvn 常年活在 ~/.local/opt 下不在 PATH，其实配过却判未就绪）。"""
+    found = shutil.which("mvn")
+    if found:
+        return CheckResult("maven (mvn)", OK, found)
+    seen: set[str] = set()
+    for entry in list_run_index().values():
+        try:
+            document = json.loads((Path(entry.path) / "run.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        maven = document.get("maven")
+        if isinstance(maven, str) and maven and maven not in seen:
+            seen.add(maven)
+            if Path(maven).exists():
+                return CheckResult("maven (mvn)", OK, f"历史 run.json → {maven}（不在 PATH，但可用）")
+    return CheckResult(
+        "maven (mvn)",
+        WARN,
+        "PATH 与历史 run.json 均无可用 mvn",
+        "brew install maven，或 loop run --maven 指定路径",
+    )
+
+
+def check_zombie_runs() -> CheckResult:
+    """蔚 11-03 工单#1：RUNNING 超 7 天的僵尸计数——孤儿 run 永无出口的反面镜子。"""
+    zombies = find_zombie_runs()
+    if not zombies:
+        return CheckResult("zombie runs", OK, "0（RUNNING 超 7 天）")
+    preview = ", ".join(run_id for run_id, _, _ in zombies[:3])
+    return CheckResult(
+        "zombie runs",
+        WARN,
+        f"{len(zombies)} 条 RUNNING 超 7 天（{preview}{'…' if len(zombies) > 3 else ''}）",
+        "loop gc --prune 转 failed:abandoned（保留历史与现场）",
+    )
+
+
 def run_doctor(repo_root: Path) -> list[CheckResult]:
     return [
         check_path_command("python3", "python3"),
         check_path_command("git", "git"),
-        check_path_command("maven (mvn)", "mvn", optional=True, hint="brew install maven，或 loop run --maven 指定 mvnw 路径"),
+        check_maven_runtime(),
+        check_java_runtime(),
         _check_venv_tool(repo_root, "pytest", label=".venv pytest"),
         _check_venv_tool(repo_root, "pyright", label=".venv pyright"),
         _check_venv_tool(repo_root, "ruff", label=".venv ruff"),
         check_run_index_health(),
+        check_zombie_runs(),
     ]
 
 

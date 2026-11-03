@@ -86,7 +86,15 @@ def build_parser(handlers: CliHandlers) -> argparse.ArgumentParser:
         "--target",
         help="Profile-specific scan, rule set, component, or dependency target",
     )
-    _ = run.add_argument("--max-iterations", type=int, default=None)
+    _ = run.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help=(
+            "每 run 迭代上限；不传则用 profile 的 max_iterations（未配置时用内置默认）。"
+            "达上限仍未绿会以 max-iterations 状态收尾，不会静默续跑"
+        ),
+    )
     _ = run.add_argument(
         "--execution-id",
         default=None,
@@ -292,7 +300,7 @@ def build_parser(handlers: CliHandlers) -> argparse.ArgumentParser:
     _ = gc.add_argument(
         "--dry-run",
         action="store_true",
-        help="Show what would be pruned without writing",
+        help="报告模式（等价于默认：不带 --prune 时本就不写，显式声明便于脚本化）",
     )
     _ = gc.add_argument(
         "--max-age",
