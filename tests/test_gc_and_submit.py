@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -17,8 +18,16 @@ from runtime_store import (  # noqa: E402
     mark_zombie_runs,
 )
 
-OLD = "2026-08-17T13:27:05+00:00"  # 远超 7 天阈值 → zombie
-FRESH = "2026-11-03T01:00:00+00:00"  # 新鲜 RUNNING → 不是 zombie
+
+def _iso(delta: timedelta) -> str:
+    """相对 now 的 ISO 时间戳——蔚 2026-11-11 P1 立规：
+    时间敏感测试禁止硬编码绝对时间戳（11-03 的 FRESH 常量 11-10 越阈值，
+    测试套件永久红——保质期只有 7 天的教训）。"""
+    return (datetime.now(timezone.utc) + delta).isoformat(timespec="seconds")
+
+
+OLD = _iso(timedelta(days=-8))  # 远超 7 天阈值 → zombie
+FRESH = _iso(timedelta(hours=-1))  # 新鲜 RUNNING → 不是 zombie（永远新鲜，永不过期）
 
 
 def _make_index(tmp: Path) -> Path:
@@ -108,3 +117,52 @@ def test_submit_message_and_message_file_are_mutually_exclusive(capsys):
         parser.parse_args(["submit", "--message", "hi", "--message-file", "f.txt"])
     assert exc.value.code == 2  # argparse 互斥组标准退出码
     assert "not allowed with argument" in capsys.readouterr().err or True
+
+
+# ── 蔚 2026-11-11 P2：status 磁盘回退 + gc 孤儿现场通道 ──
+
+
+def test_find_run_dir_on_disk_hits_deindexed_scene(tmp_path, monkeypatch):
+    import runtime_store
+
+    (tmp_path / "runs" / "legacy-1").mkdir(parents=True)
+    (tmp_path / "runs" / "legacy-1" / "run.json").write_text(
+        '{"status": "failed:abandoned", "startedAt": "2026-08-17T13:27:05+00:00"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runtime_store, "run_index_path", lambda: tmp_path / "run-index.json")
+    hit = runtime_store.find_run_dir_on_disk("legacy-1")
+    assert hit is not None and hit.name == "legacy-1"
+    assert runtime_store.find_run_dir_on_disk("no-such-run") is None
+
+
+def test_stale_run_dirs_only_lists_old_orphans(fake_index, tmp_path, monkeypatch):
+    import runtime_store
+
+    monkeypatch.setattr(runtime_store, "run_index_path", lambda: tmp_path / "run-index.json")
+    # 全部出索引（模拟 gc 治理后）→ 两条都是孤儿；age 门槛 7 天 → 只有 zombie-1 过线
+    monkeypatch.setattr(runtime_store, "_load_run_index", lambda: {})
+    stale = runtime_store.find_stale_run_dirs(max_age_days=7)
+    assert [s[0] for s in stale] == ["zombie-1"]
+    assert stale[0][1] == "RUNNING"  # run.json 状态原样（孤儿扫描不改写）
+
+
+def test_prune_stale_run_dirs_removes_only_stale(fake_index, tmp_path, monkeypatch):
+    import runtime_store
+
+    monkeypatch.setattr(runtime_store, "run_index_path", lambda: tmp_path / "run-index.json")
+    monkeypatch.setattr(runtime_store, "_load_run_index", lambda: {})
+    removed = runtime_store.prune_stale_run_dirs(max_age_days=7)
+    assert removed == ["zombie-1"]
+    assert not (tmp_path / "runs" / "zombie-1").exists()
+    # 新鲜现场不删——「保留现场」的边界在年龄，不在存在性
+    assert (tmp_path / "runs" / "fresh-1" / "run.json").exists()
+
+
+def test_stale_scan_skips_indexed_runs(fake_index, tmp_path, monkeypatch):
+    import runtime_store
+
+    monkeypatch.setattr(runtime_store, "run_index_path", lambda: tmp_path / "run-index.json")
+    # fake_index 默认 _load_run_index 返回两条（都在索引里）→ 即便 86 天也不是孤儿
+    stale = runtime_store.find_stale_run_dirs(max_age_days=7)
+    assert stale == []

@@ -204,6 +204,74 @@ def mark_zombie_runs(threshold_days: int = ZOMBIE_RUNNING_DAYS) -> list[tuple[st
     return marked
 
 
+def runs_root() -> Path:
+    """runs/ 现场根。
+
+    本部署实况（2026-11-11 真机实证）：索引在 ~/.loop-engineering/ 而现场在
+    ~/Projects/self/.loop-engineering/runs/——两级根并存，索引条目的 path 字段
+    指向真实现场。故优先从条目 path 归纳公共父目录；索引为空/不一致时回退
+    run-index.json 同级 runs/。
+    """
+    parents = {Path(entry.path).parent for entry in _load_run_index().values()}
+    if len(parents) == 1:
+        return parents.pop()
+    return run_index_path().parent / "runs"
+
+
+def find_run_dir_on_disk(run_id: str) -> Path | None:
+    """蔚 2026-11-11 P2：索引未命中 ≠ 不存在——gc 治理出索引的现场仍在磁盘，
+    「保留现场」不该变成查询黑洞。按 run_id 直查 runs/<id>/run.json。"""
+    candidate = runs_root() / run_id / "run.json"
+    return candidate.parent if candidate.exists() else None
+
+
+def find_stale_run_dirs(max_age_days: int = 30) -> list[tuple[str, str, str, str]]:
+    """蔚 2026-11-11 P2：磁盘级兜底通道——出索引的孤儿现场按 max-age 清理。
+
+    只看不在索引里的 run 目录（在索引的有索引级生命周期）；返回
+    (run_id, status, age_days, path)。磁盘现场无 last_seen，以 run.json 的
+    startedAt（缺失则目录 mtime）计龄。
+    """
+    index = _load_run_index()
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=max_age_days)
+    root = runs_root()
+    out: list[tuple[str, str, str, str]] = []
+    if not root.exists():
+        return out
+    for run_dir in sorted(root.iterdir()):
+        if not run_dir.is_dir() or run_dir.name in index:
+            continue
+        record = run_dir / "run.json"
+        if not record.exists():
+            continue
+        try:
+            document = json.loads(record.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        status = str(document.get("status", "unknown"))
+        started_raw = document.get("startedAt") or document.get("createdAt")
+        try:
+            started = dt.datetime.fromisoformat(str(started_raw))
+        except (TypeError, ValueError):
+            started = dt.datetime.fromtimestamp(run_dir.stat().st_mtime, dt.timezone.utc)
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=dt.timezone.utc)
+        if started >= cutoff:
+            continue
+        age_days = (dt.datetime.now(dt.timezone.utc) - started).days
+        out.append((run_dir.name, status, str(age_days), str(run_dir)))
+    return out
+
+
+def prune_stale_run_dirs(max_age_days: int = 30) -> list[str]:
+    """--prune 删孤儿现场（报告先行惯例：先 find_stale_run_dirs 看，确认再删）。"""
+    removed: list[str] = []
+    for run_id, _status, _age, path in find_stale_run_dirs(max_age_days):
+        shutil.rmtree(path, ignore_errors=True)
+        removed.append(run_id)
+    return removed
+
+
 def prune_run_index(dry_run: bool = False, max_age_days: int = 30) -> list[tuple[str, str, str]]:
     """Drop dead entries (failed/missing) whose last_seen is older than the cutoff.
 

@@ -27,10 +27,13 @@ from run_preparation import RunOptions
 from run_store import load_run_record, write_run_record
 from runtime_store import (
     RunNotFoundError,
+    find_run_dir_on_disk,
+    find_stale_run_dirs,
     find_zombie_runs,
     list_run_index,
     mark_zombie_runs,
     prune_run_index,
+    prune_stale_run_dirs,
 )
 from loop_doctor import fix_venv_tools, render_doctor, run_doctor
 from status_report import (
@@ -101,9 +104,22 @@ def cmd_status(args: CliArguments) -> int:
     try:
         run_dir, meta = load_run_record(args.run_id)
     except RunNotFoundError:
-        eprint(f"[loop] ERROR: Run not found: {args.run_id}")
-        eprint("        Use 'loop status --list' to see available runs.")
-        return 1
+        # 蔚 2026-11-11 P2：索引未命中 ≠ 不存在——gc 治理出索引的现场仍在磁盘上，
+        # 「保留现场」不该变成查询黑洞。扫 runs/ 兜底展示。
+        disk_dir = find_run_dir_on_disk(args.run_id)
+        if disk_dir is None:
+            eprint(f"[loop] ERROR: Run not found: {args.run_id}")
+            eprint("        Use 'loop status --list' to see available runs.")
+            return 1
+        try:
+            document = json.loads((disk_dir / "run.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            document = {}
+        print(f"[loop] status: {args.run_id} 已出索引（gc 治理），现场保留在 {disk_dir}")
+        print(f"  status: {document.get('status', 'unknown')} · startedAt: {document.get('startedAt', '?')}")
+        if document.get("abandonedAt"):
+            print(f"  abandonedAt: {document['abandonedAt']}")
+        return 0
     request = StatusReportRequest(args.run_id, run_dir, meta, os.name == "nt")
     if args.json:
         print(json.dumps(build_status_document(request), ensure_ascii=False, indent=2))
@@ -254,7 +270,16 @@ def cmd_gc(args: CliArguments) -> int:
     if zombies and not dry_run:
         mark_zombie_runs()
     removed = prune_run_index(dry_run=dry_run, max_age_days=parse_max_age(args.max_age))
-    if not removed and not zombies:
+    # 蔚 2026-11-11 P2：磁盘级兜底——出索引的孤儿现场清理通道（报告先行）
+    stale = find_stale_run_dirs(parse_max_age(args.max_age))
+    if stale:
+        print(f"[loop] gc: 磁盘现场报告（出索引孤儿，--max-age {args.max_age}）")
+        for run_id, status, age, path in stale:
+            verb = "已删现场" if not dry_run else "将删（--prune 执行）"
+            print(f"  {run_id} · {status} · {age} 天 · {path} → {verb}")
+        if not dry_run:
+            prune_stale_run_dirs(parse_max_age(args.max_age))
+    if not removed and not zombies and not stale:
         print("[loop] gc: nothing to prune")
         return 0
     verb = "would prune" if dry_run else "pruned"
