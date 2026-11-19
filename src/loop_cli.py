@@ -25,6 +25,7 @@ from iteration_runner import run_iteration_cli
 from run_controller import execute_run
 from run_preparation import RunOptions
 from run_store import load_run_record, write_run_record
+from run_environment import RunEnvironmentError
 from runtime_store import (
     RunNotFoundError,
     find_run_dir_on_disk,
@@ -55,6 +56,9 @@ PROFILES_DIR = ROOT_DIR / "profiles"
 
 
 def eprint(message: str) -> None:
+    # 蔚 2026-11-19 P3-1：重定向到文件时 stdout 块缓冲、stderr 无缓冲——ERROR 行会
+    # 插队到尚未刷出的 header 之前（排障误导）。先刷 stdout 再打 stderr，保时序。
+    sys.stdout.flush()
     print(message, file=sys.stderr, flush=True)
 
 
@@ -346,6 +350,11 @@ def main(argv: list[str] | None = None) -> int:
     except RunNotFoundError as exc:
         eprint(f"[loop] ERROR: {exc}")
         eprint("        Use 'loop status --list' to see available runs.")
+        return 1
+    except RunEnvironmentError as exc:
+        # 蔚 2026-11-19 P3-2：运行环境类错误退出码对齐 1——此前落进宽捕获 return 2，
+        # 与 argparse 用法错误撞码（规范：环境错 1 / 用法错 2）
+        eprint(f"[loop] ERROR: {exc}")
         return 1
     except (OSError, UnicodeError, RuntimeError, ValueError) as exc:
         eprint(f"[loop] ERROR: {exc}")

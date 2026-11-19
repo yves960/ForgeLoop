@@ -229,4 +229,23 @@ def execute_run(options: RunOptions) -> int:
         return persist_unsafe_runtime(prepared, worktree)
     except (OSError, UnicodeError, RuntimeError, ValueError):
         persist_run_error(prepared, worktree)
+        # 蔚 2026-11-19 P2-2：失败 run 当场回收 worktree+branch——run dir 照留（审计
+        # 设计不动）。此前只 persist 不清场：maven 失败的 run 留下 worktree+branch
+        # 裸奔成垃圾（真机实锤 worktrees/ForgeLoop/20261119-100314-b18d90 + 3 条
+        # loop/* branch）。清场失败不掩盖原始错误。
+        try:
+            from worktree_lifecycle import CleanupRequest, cleanup_worktree
+
+            cleanup_worktree(
+                CleanupRequest(
+                    repo_root=prepared.repository.root,
+                    worktree_root=worktree.root,
+                    baseline_ref=worktree.baseline_ref,
+                    branch=worktree.branch,
+                    delete_branch=True,
+                )
+            )
+            print(f"[loop] 失败回收：worktree+branch 已清（run dir 保留审计）")
+        except Exception as cleanup_error:  # noqa: BLE001
+            print(f"[loop] 警告：失败回收未完成（{cleanup_error}）——可 loop cleanup 手动清")
         raise

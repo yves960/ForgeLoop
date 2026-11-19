@@ -166,3 +166,49 @@ def test_stale_scan_skips_indexed_runs(fake_index, tmp_path, monkeypatch):
     # fake_index 默认 _load_run_index 返回两条（都在索引里）→ 即便 86 天也不是孤儿
     stale = runtime_store.find_stale_run_dirs(max_age_days=7)
     assert stale == []
+
+
+# ── 蔚 2026-11-19 P2-1：find_maven 口径统一（doctor 多源吃进 run 侧）──
+
+
+def test_find_maven_loop_maven_env_override(tmp_path, monkeypatch):
+    import run_environment as re_mod
+
+    fake = tmp_path / "mvn"
+    fake.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setenv("LOOP_MAVEN", str(fake))
+    got = re_mod.find_maven(tmp_path, tmp_path, None)
+    assert got.endswith("mvn")
+
+
+def test_find_maven_history_fallback(tmp_path, monkeypatch):
+    import run_environment as re_mod
+
+    historical = tmp_path / "opt" / "apache-maven-3.9.16" / "bin" / "mvn"
+    historical.parent.mkdir(parents=True)
+    historical.write_text("#!/bin/sh\n", encoding="utf-8")
+    run_dir = tmp_path / "runs" / "r1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run.json").write_text(json.dumps({"maven": str(historical)}), encoding="utf-8")
+
+    import runtime_store
+
+    monkeypatch.setattr(runtime_store, "run_index_path", lambda: tmp_path / "run-index.json")
+    monkeypatch.setattr(re_mod, "_maven_from_history", lambda: str(historical))
+    # PATH 无 mvn、无 mvnw——只剩历史回溯这一源（doctor 同口径）
+    monkeypatch.setattr(re_mod.shutil, "which", lambda name: None)
+    got = re_mod.find_maven(tmp_path, tmp_path, None)
+    assert got == str(historical)
+
+
+def test_find_maven_error_carries_fix_line(tmp_path, monkeypatch):
+    import run_environment as re_mod
+
+    monkeypatch.delenv("LOOP_MAVEN", raising=False)
+    monkeypatch.setattr(re_mod.shutil, "which", lambda name: None)
+    monkeypatch.setattr(re_mod, "_maven_from_history", lambda: None)
+    try:
+        re_mod.find_maven(tmp_path, tmp_path, None)
+        raise AssertionError("应抛 RunEnvironmentError")
+    except re_mod.RunEnvironmentError as err:
+        assert "--maven" in str(err) and "LOOP_MAVEN" in str(err)

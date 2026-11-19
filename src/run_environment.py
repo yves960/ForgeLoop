@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import re
 import shutil
@@ -101,11 +102,41 @@ def resolve_agent(
     )
 
 
+def _maven_from_history() -> str | None:
+    """蔚 2026-11-19 P2-1：doctor 同口径——run-index 历史 run.json 的 maven 字段回溯。
+
+    doctor（74a64fe 多源探测）认得 ~/.local 的 maven，run 却只认 PATH——
+    同机两口径，用户视角就是 doctor 骗我。此函数让 find_maven 吃到同一批来源。"""
+    try:
+        from runtime_store import list_run_index
+    except ImportError:
+        return None
+    seen: set[str] = set()
+    for entry in list_run_index().values():
+        try:
+            document = json.loads((Path(entry.path) / "run.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        maven = document.get("maven")
+        if isinstance(maven, str) and maven and maven not in seen:
+            seen.add(maven)
+            if Path(maven).exists():
+                return maven
+    return None
+
+
 def find_maven(
     module_dir: Path,
     repo_root: Path,
     explicit: str | None,
 ) -> str:
+    # 蔚 2026-11-19 P2-1：LOOP_MAVEN env 逃生口（run --help 的 --maven 之外的常驻版）
+    override = os.environ.get("LOOP_MAVEN")
+    if override:
+        override_path = Path(override)
+        if override_path.exists():
+            return str(override_path.resolve())
+        raise RunEnvironmentError(f"LOOP_MAVEN does not exist: {override}")
     if explicit:
         path = Path(explicit)
         if path.exists():
@@ -129,8 +160,14 @@ def find_maven(
     executable = shutil.which("mvn.cmd") or shutil.which("mvn")
     if executable:
         return executable
+    historical = _maven_from_history()
+    if historical:
+        return historical
+    # 蔚 2026-11-19 P2-1：报错带可复制 fix 行——run --help 明明有 --maven 逃生口
     raise RunEnvironmentError(
         "Could not find mvnw.cmd/mvnw in repository and mvn is not on PATH."
+        " fix: --maven /Users/sy/.local/opt/apache-maven-3.9.16/bin/mvn"
+        " 或 export LOOP_MAVEN=<mvn 路径>（doctor 的历史探测口径已吃进）"
     )
 
 
