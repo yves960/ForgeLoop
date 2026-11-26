@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import re
 from pathlib import Path
 from typing import NamedTuple
@@ -174,10 +175,26 @@ def render_status_report(request: StatusReportRequest) -> str:
         )
 
     status = record.get("status", "UNKNOWN")
+    # 蔚 2026-11-26 N3：活性提示——死 run 显示活状态无年龄警告（doctor 僵尸阈值
+    # 7 天，新鲜尸体读作健康是假阴性）。RUNNING 态给 startedAt 年龄 + 长时未更新警示
+    started_at = record.get("startedAt")
+    liveness_hint = ""
+    if status == "RUNNING" and isinstance(started_at, str) and started_at:
+        try:
+            started_dt = dt.datetime.fromisoformat(started_at)
+            age = dt.datetime.now(dt.timezone.utc) - started_dt.replace(
+                tzinfo=started_dt.tzinfo or dt.timezone.utc
+            )
+            age_hours = age.total_seconds() / 3600
+            liveness_hint = f"（已运行 {age_hours:.1f}h）"
+            if age_hours > 1:
+                liveness_hint += " ⚠ 长时间无终态——可能已死（Ctrl+C/SIGKILL 可绕过回收），交叉核对进程表或 loop doctor"
+        except (ValueError, TypeError):
+            pass
     lines = [
         f"Run: {record.get('runId', request.run_id)}",
         "",
-        f"Status: {status}",
+        f"Status: {status}{liveness_hint}",
         f"Reason: {record.get('reason', '-')}",
         f"Target: {record.get('test', '-')}",
         f"Iteration: {iteration if iteration is not None else '-'} / "

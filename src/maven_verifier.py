@@ -23,6 +23,10 @@ _INFRASTRUCTURE_MARKERS: Final[tuple[tuple[str, str], ...]] = (
     ("connection timed out", "MAVEN_NETWORK_FAILURE"),
     ("pkix path building failed", "MAVEN_NETWORK_FAILURE"),
     ("java_home", "JAVA_RUNTIME_UNAVAILABLE"),
+    # 蔚 2026-11-26 N2b：JDK 缺位的第二种文案——java 启动器直报「Unable to locate
+    # a Java Runtime」（不含 java_home 字串，此前的盲区：真机 mvn 死于该消息却被判
+    # TARGET_UT_FAILED 烧 10 轮迭代）。补映射后走 BLOCKED 终止，循环零改动
+    ("unable to locate a java runtime", "JAVA_RUNTIME_UNAVAILABLE"),
     ("could not find or load main class", "JAVA_RUNTIME_UNAVAILABLE"),
 )
 

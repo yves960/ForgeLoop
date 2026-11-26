@@ -15,7 +15,13 @@ from java_ut_verifier import verify_profile
 from process_runner import run_process
 from run_config_store import RunConfig, write_run_config
 from run_environment import render_task
-from run_failure import persist_run_error, persist_unsafe_runtime
+from run_environment import RunEnvironmentError
+from run_failure import (
+    persist_run_environment,
+    persist_run_error,
+    persist_run_interrupted,
+    persist_unsafe_runtime,
+)
 from run_preparation import (
     PreparedRun,
     RunOptions,
@@ -220,32 +226,75 @@ def _execute_active_run(
     return 0 if result.get("status") == "PASS" else 1
 
 
+def _cleanup_failed_run_resources(prepared: PreparedRun, worktree: WorktreeResult) -> None:
+    """蔚 2026-11-19 P2-2 落地、2026-11-26 N1 抽取复用：失败/中断 run 当场回收
+    worktree+branch——run dir 照留（审计设计不动）。清场失败不掩盖原始错误。"""
+    try:
+        from worktree_lifecycle import CleanupRequest, cleanup_worktree
+
+        cleanup_worktree(
+            CleanupRequest(
+                repo_root=prepared.repository.root,
+                worktree_root=worktree.root,
+                baseline_ref=worktree.baseline_ref,
+                branch=worktree.branch,
+                delete_branch=True,
+            )
+        )
+        print("[loop] 失败回收：worktree+branch 已清（run dir 保留审计）")
+    except Exception as cleanup_error:  # noqa: BLE001
+        print(f"[loop] 警告：失败回收未完成（{cleanup_error}）——可 loop cleanup 手动清")
+
+
+def _sigterm_as_interrupt(signum, frame) -> None:  # noqa: ANN001
+    """蔚 2026-11-26 N1：SIGTERM 转译为 KeyboardInterrupt——走同一条中断回收链。
+    SIGKILL 不可捕获（物理上限，蔚已知）。"""
+    raise KeyboardInterrupt()
+
+
 def execute_run(options: RunOptions) -> int:
     prepared = prepare_run(options)
     worktree = create_isolated_worktree(prepared)
-    try:
-        return _execute_active_run(prepared, worktree)
-    except UnsafeRuntimePathError:
-        return persist_unsafe_runtime(prepared, worktree)
-    except (OSError, UnicodeError, RuntimeError, ValueError):
-        persist_run_error(prepared, worktree)
-        # 蔚 2026-11-19 P2-2：失败 run 当场回收 worktree+branch——run dir 照留（审计
-        # 设计不动）。此前只 persist 不清场：maven 失败的 run 留下 worktree+branch
-        # 裸奔成垃圾（真机实锤 worktrees/ForgeLoop/20261119-100314-b18d90 + 3 条
-        # loop/* branch）。清场失败不掩盖原始错误。
-        try:
-            from worktree_lifecycle import CleanupRequest, cleanup_worktree
+    import signal
 
-            cleanup_worktree(
-                CleanupRequest(
-                    repo_root=prepared.repository.root,
-                    worktree_root=worktree.root,
-                    baseline_ref=worktree.baseline_ref,
-                    branch=worktree.branch,
-                    delete_branch=True,
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+    signal.signal(signal.SIGTERM, _sigterm_as_interrupt)
+    try:
+        try:
+            # 蔚 2026-11-26 N2：迭代前 JDK preflight（doctor 同源探测复用）。此前
+            # 环境失败被 verifier 判 TARGET_UT_FAILED 进 10 轮 agent 燃烧（83% CPU
+            # 修不可能绿的问题）——maven 口径修复带来的失败经济学回退。无 JDK 直接
+            # ENVIRONMENT 终态退出，不烧一轮。注意 raise 必须落在 except 守区内
+            # （首版放守区外：exit 1 对了但 persist+cleanup 双旁路，残留 1/1 实锤）。
+            from loop_doctor import check_java_runtime
+
+            java_check = check_java_runtime()
+            if java_check.state != "✓":
+                raise RunEnvironmentError(
+                    "JDK 缺位，run 不进迭代（doctor 同口径）："
+                    + (java_check.detail or "JAVA_HOME / /usr/libexec/java_home / PATH 均无")
+                    + "。fix: brew install --cask temurin@17 或设 JAVA_HOME"
                 )
-            )
-            print(f"[loop] 失败回收：worktree+branch 已清（run dir 保留审计）")
-        except Exception as cleanup_error:  # noqa: BLE001
-            print(f"[loop] 警告：失败回收未完成（{cleanup_error}）——可 loop cleanup 手动清")
-        raise
+            return _execute_active_run(prepared, worktree)
+        except UnsafeRuntimePathError:
+            return persist_unsafe_runtime(prepared, worktree)
+        except RunEnvironmentError:
+            # 蔚 2026-11-26 N2：环境类错误落 ENVIRONMENT 终态（区别于通用 ERROR）——
+            # run.json 可辨识「死于环境」而非「死于代码」，JDK/loop 可执行缺位同归此类
+            persist_run_environment(prepared, worktree)
+            _cleanup_failed_run_resources(prepared, worktree)
+            raise
+        except KeyboardInterrupt:
+            # 蔚 2026-11-26 N1：中断路径——此前直穿 loop_cli:347 的 main 级处理器
+            # （return 130），不 persist 不清场：run.json 永停 RUNNING、worktree+
+            # branch 双泄漏、status 读作活实例（真机 20261126-100127-c92e95）。
+            # 落 INTERRUPTED 终态 + endedAt + 复用回收钩子；re-raise 保 130 语义。
+            persist_run_interrupted(prepared, worktree)
+            _cleanup_failed_run_resources(prepared, worktree)
+            raise
+        except (OSError, UnicodeError, RuntimeError, ValueError):
+            persist_run_error(prepared, worktree)
+            _cleanup_failed_run_resources(prepared, worktree)
+            raise
+    finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)

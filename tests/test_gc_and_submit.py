@@ -212,3 +212,82 @@ def test_find_maven_error_carries_fix_line(tmp_path, monkeypatch):
         raise AssertionError("应抛 RunEnvironmentError")
     except re_mod.RunEnvironmentError as err:
         assert "--maven" in str(err) and "LOOP_MAVEN" in str(err)
+
+
+# ── 蔚 2026-11-26 N1/N3：中断回收链与活性提示的确定性单测锁 ──
+# （真机窗口在本机已被 N2 反讽消灭：无 JDK → 无长跑可中断——单测是诚实替代）
+
+
+def test_interrupt_persists_interrupted_and_cleans(monkeypatch):
+    """N1：KeyboardInterrupt → INTERRUPTED 落态 + 清场 + re-raise（130 语义在 loop_cli）。"""
+    import types
+
+    import run_controller as rc
+
+    calls = []
+
+    class FakePrepared:
+        pass
+
+    prepared = FakePrepared()
+    worktree = types.SimpleNamespace(
+        root="/tmp/wt-x", branch="loop/x/1", baseline_ref="HEAD", source_head="abc"
+    )
+    monkeypatch.setattr(rc, "prepare_run", lambda options: prepared)
+    monkeypatch.setattr(rc, "create_isolated_worktree", lambda p: worktree)
+    # 本机无 JDK——前置会先炸 RunEnvironmentError 走错分支；patch 成 ✓ 放行
+    import types as _t
+
+    import loop_doctor as _ld
+
+    monkeypatch.setattr(
+        _ld, "check_java_runtime", lambda: _t.SimpleNamespace(state="✓", detail="fake")
+    )
+    monkeypatch.setattr(
+        rc, "persist_run_environment", lambda p, w: calls.append("environment")
+    )
+    monkeypatch.setattr(
+        rc,
+        "_execute_active_run",
+        lambda p, w: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    monkeypatch.setattr(
+        rc, "persist_run_interrupted", lambda p, w: calls.append("interrupted")
+    )
+    monkeypatch.setattr(
+        rc, "_cleanup_failed_run_resources", lambda p, w: calls.append("cleanup")
+    )
+    import pytest
+
+    with pytest.raises(KeyboardInterrupt):
+        rc.execute_run(None)
+    assert calls == ["interrupted", "cleanup"]
+
+
+def test_status_age_warning_for_stale_running():
+    """N3：RUNNING 且陈旧 startedAt → 年龄提示 + 警告行。"""
+    import datetime as dt
+    import io
+
+    from status_report import render_status_report
+
+    old = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=3)).isoformat()
+    record = {
+        "runId": "wf-age-test",
+        "status": "RUNNING",
+        "startedAt": old,
+        "test": "com.example.FooTest",
+        "repoRoot": "/tmp",
+        "moduleRel": ".",
+    }
+    request = types_simple(record, "wf-age-test")
+    text = render_status_report(request)
+    assert "已运行" in text and "长时间无终态" in text
+
+
+def types_simple(record, run_id):
+    import types
+
+    from pathlib import Path
+
+    return types.SimpleNamespace(record=record, run_id=run_id, run_dir=Path("/tmp"))
